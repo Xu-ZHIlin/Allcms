@@ -1,0 +1,77 @@
+import axios from "axios";
+import {useUserStore} from "@/stores/user.ts";
+import {ElMessage} from "element-plus";
+
+// 创建 axios 实例
+const instance = axios.create({
+    baseURL: import.meta.env.VITE_API_BASE_URL,
+    timeout: 5000,
+});
+
+// 请求拦截器
+instance.interceptors.request.use((config) => {
+    // 【核心】在这里获取 store 实例
+    const userStore = useUserStore();
+
+    // 直接从 store 中拿 token
+    if (userStore.token) {
+        // 按照后端要求的格式塞进请求头，一般是 Authorization 或 token
+        config.headers['Authorization'] = `Bearer ${userStore.token}`;
+    }
+    if (config.method?.toLowerCase() !== 'get') {
+        config.headers['Content-Type'] = 'application/json;charset=UTF-8';
+    }
+    return config;
+}, (error: any) => {
+    return Promise.reject(error);
+});
+
+// 响应拦截器
+instance.interceptors.response.use(
+    (response) => {
+        // 这里的 response.data 就是后端的 Result 对象
+        const res = response.data;
+
+        // --- 情况 1：后端返回 200 OK，但在 Result 对象里封装了 403 ---
+        if (res.code === 403) {
+            ElMessage.error(res.message || '权限不足，无法操作');
+            return Promise.reject(new Error(res.message || 'Forbidden'));
+        }
+
+        // 如果业务代码不是 200 (假设你的成功码是 200)，可以在这里统一弹窗
+        if (res.code !== 200) {
+            ElMessage.warning(res.message || '操作失败');
+            return Promise.reject(res);
+        }
+
+        return res;
+    },
+    (error) => {
+        // --- 情况 2：后端直接抛出了非 200 的 HTTP 状态码 ---
+        if (error.response) {
+            switch (error.response.status) {
+                case 401:
+                    ElMessage.error("登录状态失效，请重新登录");
+                    const userStore = useUserStore();
+                    userStore.logout(); // 建议调用 store 的 logout 清理状态
+                    window.location.href = '/login';
+                    break;
+                case 403:
+                    // 处理真正的 HTTP 403 错误
+                    ElMessage.error("对不起，您没有权限执行此操作");
+                    break;
+                case 500:
+                    ElMessage.error("服务器开小差了，请稍后再试");
+                    break;
+                default:
+                    ElMessage.error(error.response.data?.message || "网络错误");
+            }
+        } else {
+            ElMessage.error("连接服务器失败");
+        }
+        return Promise.reject(error);
+    }
+);
+
+// 重点：把实例导出！！！
+export default instance;
