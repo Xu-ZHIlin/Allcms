@@ -1,7 +1,6 @@
 <script lang="ts" setup>
 import { nextTick, onMounted, reactive, ref } from 'vue'
-import type { FormInstance } from 'element-plus'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage, ElMessageBox, type FormInstance, type FormRules, type ElTreeInstance } from 'element-plus'
 import {
   authorizeRole,
   createRole,
@@ -24,8 +23,16 @@ interface RoleForm {
 interface PermissionItem {
   id: number
   name: string
-  menuType?: 'DIRECTORY' | 'MENU' | 'BUTTON'
+  menuType: string
   children?: PermissionItem[]
+}
+
+// 表单校验规则（修复缺失roleRules）
+const roleRules: FormRules = {
+  name: [
+    { required: true, message: '请输入角色名称', trigger: 'blur' },
+    { min: 2, max: 50, message: '长度在 2 到 50 个字符', trigger: 'blur' }
+  ]
 }
 
 const roleFormRef = ref<FormInstance>()
@@ -42,74 +49,72 @@ const pageSize = ref(10)
 const total = ref(0)
 const currentRole = ref<RoleItem | null>(null)
 const permissionTree = ref<PermissionItem[]>([])
-const permissionTreeRef = ref<any>(null)
+// 精准树形组件类型，替换any
+const permissionTreeRef = ref<ElTreeInstance | null>(null)
+const queryForm = reactive({
+  roleName: '',
+})
 
-const queryForm = reactive({ roleName: '' })
-
-const roleRules = {
-  name: [
-    { required: true, message: '请输入角色名称', trigger: 'blur' },
-    { max: 50, message: '长度不能超过50个字符', trigger: 'blur' }
-  ]
+const permissionTreeProps = {
+  label: 'name',
+  children: 'children',
 }
 
-const permissionTreeProps = { label: 'name', children: 'children' }
-
-// 给对象加索引签名，解决TS索引报错
-const permissionTypeTagMap: Record<string, string> = {
+const permissionTypeTagMap = {
   DIRECTORY: 'primary',
   MENU: 'success',
   BUTTON: 'warning',
 }
 
-// 限定返回类型，避免string索引问题
-const normalizeMenuType = (menuType?: string): 'DIRECTORY' | 'MENU' | 'BUTTON' | '' => {
-  const type = (menuType || '').toUpperCase()
-  if (['DIRECTORY', 'MENU', 'BUTTON'].includes(type)) {
-    return type as 'DIRECTORY' | 'MENU' | 'BUTTON'
-  }
-  return ''
-}
+const normalizeMenuType = (menuType?: string) => (menuType || '').toUpperCase()
 
+// 加载角色分页列表
 const getRoleData = async () => {
   tableLoading.value = true
   try {
     const result = await getRoleInfoPage({
       currentPage: currentPage.value,
       pageSize: pageSize.value,
-      params: [{ name: 'roleName', value: queryForm.roleName }],
+      roleName: queryForm.roleName
     })
     roleList.value = result.data?.records || []
     total.value = Number(result.data?.total || 0)
+  } catch (err) {
+    ElMessage.error('获取角色列表失败')
   } finally {
     tableLoading.value = false
   }
 }
 
-// 修复异步警告：加async/await
-const handleSearch = async () => {
+// 分页-每页条数改变
+const handleSizeChange = () => {
   currentPage.value = 1
-  await getRoleData()
+  getRoleData()
 }
 
-// 修复异步警告：加async/await
-const resetSearch = async () => {
+// 分页-页码切换
+const handleCurrentChange = () => {
+  getRoleData()
+}
+
+// 查询
+let searchTimer: number | null = null
+const handleSearch = () => {
+  if (searchTimer) clearTimeout(searchTimer)
+  searchTimer = window.setTimeout(() => {
+    currentPage.value = 1
+    getRoleData()
+  }, 300)
+}
+
+// 重置搜索
+const resetSearch = () => {
   queryForm.roleName = ''
   currentPage.value = 1
-  await getRoleData()
-}
-
-const handleSizeChange = (size: number) => {
-  pageSize.value = size
-  currentPage.value = 1
   getRoleData()
 }
 
-const handleCurrentChange = (page: number) => {
-  currentPage.value = page
-  getRoleData()
-}
-
+// 打开新增/编辑弹窗
 const openRoleDialog = (row?: RoleItem) => {
   editingId.value = row?.id || null
   roleForm.value = row ? { name: row.name } : { name: '' }
@@ -117,8 +122,10 @@ const openRoleDialog = (row?: RoleItem) => {
   roleDialogVisible.value = true
 }
 
+// 提交角色新增/编辑
 const submitRole = async () => {
   if (!roleFormRef.value) return
+
   const valid = await roleFormRef.value.validate().catch(() => false)
   if (!valid) return
 
@@ -129,73 +136,104 @@ const submitRole = async () => {
         ? await updateRole(editingId.value, payload)
         : await createRole(payload)
 
-    // 修复message类型报错：用可选链兜底
-    ElMessage.success((result as any).message || (editingId.value ? '更新成功' : '创建成功'))
+    ElMessage.success(result.message || (editingId.value ? '角色已更新' : '角色已新增'))
     roleDialogVisible.value = false
     await getRoleData()
-  } catch (e: any) {
-    ElMessage.error(e.message || '操作失败')
+  } catch (err) {
+    ElMessage.error('保存角色失败')
   } finally {
     submitting.value = false
   }
 }
 
+// 删除角色
 const handleDelete = async (row: RoleItem) => {
-  await ElMessageBox.confirm(`确定删除 ${row.name} 吗？`, '提示', { type: 'warning' })
   try {
+    await ElMessageBox.confirm(`确认删除角色“${row.name}”吗？`, '删除确认', {
+      confirmButtonText: '删除',
+      cancelButtonText: '取消',
+      type: 'warning',
+    })
     await deleteRole(row.id)
-    ElMessage.success('删除成功')
+    ElMessage.success('角色已删除')
     await getRoleData()
-  } catch (e: any) {
-    ElMessage.error(e.message || '删除失败')
+  } catch (err: any) {
+    if (err !== 'cancel') ElMessage.error('删除角色失败')
   }
 }
 
+// 打开授权弹窗，回显权限
 const handleAuthorize = async (role: RoleItem) => {
   currentRole.value = role
   authorizeDialogVisible.value = true
 
+  // 仅第一次加载权限树
   if (permissionTree.value.length === 0) {
-    const tree = await getPermissionTree()
-    permissionTree.value = tree.data || []
+    try {
+      const treeResult = await getPermissionTree()
+      permissionTree.value = treeResult.data || []
+    } catch (err) {
+      ElMessage.error('加载权限树失败')
+      authorizeDialogVisible.value = false
+      return
+    }
   }
 
-  const res = await getRolePermissionIds(role.id)
-  const ids: number[] = res.data || []
+  let permissionIds: number[] = []
+  try {
+    const result = await getRolePermissionIds(role.id)
+    permissionIds = result.data || []
+  } catch (err) {
+    ElMessage.error('获取角色权限失败')
+    return
+  }
 
   await nextTick()
-  permissionTreeRef.value?.setCheckedKeys([])
-  // 修复id隐式any报错：加类型注解
-  ids.forEach((id: number) => permissionTreeRef.value?.setChecked(id, true, false))
+  // 批量赋值，替代循环setChecked，优化性能
+  permissionTreeRef.value?.setCheckedKeys(permissionIds)
 }
 
+// 保存角色权限授权
 const handleSaveAuthorize = async () => {
-  if (!currentRole.value) return
+  if (!currentRole.value || !permissionTreeRef.value) return
   authorizing.value = true
+
   try {
-    const checked = permissionTreeRef.value?.getCheckedKeys(false) || []
-    const half = permissionTreeRef.value?.getHalfCheckedKeys() || []
-    const all = [...new Set([...checked, ...half])].map(Number)
+    const checkedKeys = permissionTreeRef.value.getCheckedKeys(false) || []
+    const halfCheckedKeys = permissionTreeRef.value.getHalfCheckedKeys() || []
+    const selectedPermissionIds = [...new Set([...checkedKeys, ...halfCheckedKeys])].map(Number)
+
+    // 校验：不能不分配任何权限
+    if (selectedPermissionIds.length === 0) {
+      ElMessage.warning('至少需要分配一项权限')
+      authorizing.value = false
+      return
+    }
 
     await authorizeRole({
       roleId: currentRole.value.id,
-      permissionIds: all
+      permissionIds: selectedPermissionIds,
     })
-    ElMessage.success('授权成功')
+    ElMessage.success('授权保存成功')
     authorizeDialogVisible.value = false
-  } catch (e: any) {
-    ElMessage.error(e.message || '授权失败')
+  } catch (err) {
+    ElMessage.error('权限授权失败')
   } finally {
     authorizing.value = false
   }
 }
 
+// 关闭授权弹窗重置状态
 const handleAuthorizeDialogClosed = () => {
   permissionTreeRef.value?.setCheckedKeys([])
+  permissionTreeRef.value?.setExpandedKeys([])
   currentRole.value = null
 }
 
-onMounted(() => getRoleData())
+// 页面初始化加载列表
+onMounted(() => {
+  getRoleData()
+})
 </script>
 
 <template>
@@ -225,9 +263,10 @@ onMounted(() => getRoleData())
         </el-form-item>
       </el-form>
 
+      <!-- 移除写死height="100%"，适配弹性布局 -->
       <el-table v-loading="tableLoading" :data="roleList" border>
-        <el-table-column prop="id" label="角色ID" width="120"/>
-        <el-table-column prop="name" label="角色名称" min-width="220" show-overflow-tooltip/>
+        <el-table-column prop="id" label="角色ID" width="120" />
+        <el-table-column prop="name" label="角色名称" min-width="220" show-overflow-tooltip />
         <el-table-column label="操作" width="260" fixed="right">
           <template #default="{ row }">
             <el-button type="primary" size="small" @click="openRoleDialog(row)">编辑</el-button>
@@ -241,9 +280,9 @@ onMounted(() => getRoleData())
         <el-pagination
             v-model:current-page="currentPage"
             v-model:page-size="pageSize"
-            :page-sizes="[10,20,50]"
+            :page-sizes="[10, 20, 50]"
             :total="total"
-            layout="total,sizes,prev,pager,next,jumper"
+            layout="total, sizes, prev, pager, next, jumper"
             @size-change="handleSizeChange"
             @current-change="handleCurrentChange"
         />
@@ -251,16 +290,17 @@ onMounted(() => getRoleData())
     </div>
   </div>
 
-  <!-- 修复：v-model:visible -->
+  <!-- 新增/编辑角色弹窗 -->
   <el-dialog
-      v-model:visible="roleDialogVisible"
+      v-model="roleDialogVisible"
       :title="editingId ? '编辑角色' : '新增角色'"
       width="460px"
       destroy-on-close
+      align-center
   >
     <el-form ref="roleFormRef" :model="roleForm" :rules="roleRules" label-width="88px">
       <el-form-item label="角色名称" prop="name">
-        <el-input v-model="roleForm.name" maxlength="50" placeholder="请输入角色名称"/>
+        <el-input v-model="roleForm.name" maxlength="50" placeholder="请输入角色名称" />
       </el-form-item>
     </el-form>
 
@@ -272,12 +312,13 @@ onMounted(() => getRoleData())
     </template>
   </el-dialog>
 
-  <!-- 修复：v-model:visible -->
+  <!-- 角色授权弹窗 -->
   <el-dialog
-      v-model:visible="authorizeDialogVisible"
-      :title="`角色授权 - ${currentRole?.name}`"
+      v-model="authorizeDialogVisible"
+      :title="`角色授权${currentRole ? ` - ${currentRole.name}` : ''}`"
       width="640px"
       destroy-on-close
+      align-center
       @closed="handleAuthorizeDialogClosed"
   >
     <div class="permission-tree-wrapper">
@@ -294,6 +335,7 @@ onMounted(() => getRoleData())
           <div class="permission-tree-node">
             <span>{{ node.label }}</span>
             <el-tag
+                class="permission-type-tag"
                 size="small"
                 :type="permissionTypeTagMap[normalizeMenuType(data.menuType)] || 'info'"
             >
@@ -315,40 +357,58 @@ onMounted(() => getRoleData())
 .role-page {
   height: 100%;
   padding: 22px;
-  background: #f5f7fa;
+  background: #f5f7fb;
   box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
 }
+
 .page-toolbar {
   display: flex;
-  justify-content: space-between;
   align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 18px;
+  padding: 18px 20px;
   background: #fff;
-  padding: 16px 20px;
+  border: 1px solid #e5e6eb;
   border-radius: 8px;
-  margin-bottom: 16px;
-  border: 1px solid #e4e7ed;
 }
+
 .list-panel {
-  background: #fff;
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  gap: 12px;
   padding: 16px;
+  background: #fff;
+  border: 1px solid #e5e6eb;
   border-radius: 8px;
-  border: 1px solid #e4e7ed;
 }
+
 .pagination-wrapper {
   display: flex;
-  justify-content: end;
-  margin-top: 12px;
+  justify-content: flex-end;
 }
+
 .permission-tree-wrapper {
-  border: 1px solid #e4e7ed;
+  border: 1px solid var(--el-border-color-lighter);
   border-radius: 6px;
-  max-height: 400px;
+  max-height: 420px;
   overflow-y: auto;
-  padding: 10px;
+  padding: 10px 12px;
 }
+
 .permission-tree-node {
   display: flex;
-  justify-content: space-between;
   align-items: center;
+  gap: 10px;
+  width: 100%;
+}
+
+.permission-type-tag {
+  margin-left: auto;
 }
 </style>

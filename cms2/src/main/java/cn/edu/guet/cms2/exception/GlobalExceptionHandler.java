@@ -17,4 +17,8 @@ public class GlobalExceptionHandler {
         // 返回 401 状态码（Unauthorized）或业务约定的错误码
         return Result.fail(401, e.getMessage());
     }
+    @ExceptionHandler(IllegalArgumentException.class)
+    public Result<Object> handleIllegalArgumentException(IllegalArgumentException e) {
+        return Result.fail(400, e.getMessage());
+    }
 }

@@ -1,36 +1,16 @@
 package cn.edu.guet.cms2.service;
 
-import cn.edu.guet.cms2.util.PageResult;
-import cn.edu.guet.cms2.dto.UserCreateDTO;
-import cn.edu.guet.cms2.dto.UserPageQueryDTO;
-import cn.edu.guet.cms2.dto.UserUpdateDTO;
+import cn.edu.guet.cms2.dto.UserDTO;
+import cn.edu.guet.cms2.util.PageRequest;
 import cn.edu.guet.cms2.vo.UserVO;
+import com.baomidou.mybatisplus.core.metadata.IPage;
 
 public interface UserService {
-    /**
-     * 分页查询用户列表
-     */
-    PageResult<UserVO> pageUsers(UserPageQueryDTO dto);
+    IPage<UserVO> getUserPage(PageRequest pageRequest);
 
-    /**
-     * 新增用户
-     * @return 创建后的用户视图
-     */
-    UserVO createUser(UserCreateDTO dto);
+    UserVO createUser(UserDTO userDTO);
 
-    /**
-     * 更新用户资料
-     * @return 更新后的用户视图
-     */
-    UserVO updateUser(UserUpdateDTO dto);
+    UserVO updateUser(Long id, UserDTO userDTO);
 
-    /**
-     * 删除用户
-     */
     void deleteUser(Long id);
-
-    /**
-     * 重置密码
-     */
-    void resetPassword(Long id, String newPassword);
 }

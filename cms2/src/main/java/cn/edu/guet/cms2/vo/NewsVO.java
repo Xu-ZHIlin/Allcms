@@ -1,19 +1,22 @@
 package cn.edu.guet.cms2.vo;
+
 import com.fasterxml.jackson.databind.annotation.JsonSerialize;
 import com.fasterxml.jackson.databind.ser.std.ToStringSerializer;
 import lombok.Data;
 
 import java.time.LocalDateTime;
-import java.util.ArrayList;
-import java.util.List;
 
 @Data
-public class UserVO {
+public class NewsVO {
     @JsonSerialize(using = ToStringSerializer.class)
     private Long id;
-    private String username;
+    private String title;
+    private String category;
+    private String supplier;
+    private String reviewer;
+    private String content;
+    private String status;
     private LocalDateTime createTime;
     private LocalDateTime updateTime;
-    private List<Integer> roleIds = new ArrayList<>();
-    private List<String> roleNames = new ArrayList<>();
+    private LocalDateTime publishTime;
 }

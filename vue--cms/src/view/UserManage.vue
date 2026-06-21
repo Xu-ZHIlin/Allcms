@@ -1,257 +1,390 @@
 <script setup lang="ts">
-import { ref, reactive, onMounted } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
-import { getUserPage, createUser, updateUser, deleteUser } from '@/http/user.ts'
+import {onMounted, reactive, ref} from "vue";
+import {ElMessage, ElMessageBox, type FormInstance, type FormRules} from "element-plus";
+import {createUser, deleteUser, getUserPage, updateUser} from "@/http/user.ts";
+import {getRoleInfoPage} from "@/http/role.ts";
 
-// 分页
-const currentPage = ref(1)
-const pageSize = ref(20)
-const total = ref(0)
+interface RoleOption {
+  id: number
+  name: string
+}
 
-// 加载状态
-const tableLoading = ref(false)
+interface UserItem {
+  id: string
+  username: string
+  createTime?: string
+  updateTime?: string
+  roleIds: number[]
+  roleNames: string[]
+}
 
-// 查询表单
-const queryForm = reactive({
-  username: '',
-  status: '',
-  phone: '',
-})
+interface UserForm {
+  username: string
+  password: string
+  roleIds: number[]
+}
 
-// 列表数据
-const userList = ref<any[]>([])
-
-// 弹窗 & 编辑
-const dialogVisible = ref(false)
-const editingId = ref<number | null>(null)
-
-// 表单
-const formRef = ref()
-const userForm = ref({
+const emptyForm = (): UserForm => ({
   username: '',
   password: '',
-  realName: '',
-  phone: '',
-  email: '',
-  status: 1,
+  roleIds: [],
 })
 
-// 校验规则
-const rules = reactive({
-  username: [
-    { required: true, message: '请输入用户名', trigger: 'blur' },
-    { min: 4, max: 20, message: '用户名长度4-20位', trigger: 'blur' },
-  ],
-  password: [
-    { required: true, message: '请输入密码', trigger: 'blur' },
-    { min: 6, max: 20, message: '密码长度6-20位', trigger: 'blur' },
-  ],
-  realName: [{ required: true, message: '请输入真实姓名', trigger: 'blur' }],
+const formRef = ref<FormInstance>()
+const userForm = ref<UserForm>(emptyForm())
+const editingId = ref<string | null>(null)
+const dialogVisible = ref(false)
+const submitting = ref(false)
+const tableLoading = ref(false)
+const userList = ref<UserItem[]>([])
+const roleOptions = ref<RoleOption[]>([])
+const deletingIds = ref<string[]>([])
+const currentPage = ref(1)
+const pageSize = ref(10)
+const total = ref(0)
+const queryForm = reactive({
+  username: '',
 })
 
-// 状态映射
-const statusTagMap: Record<number, string> = {
-  0: 'danger',
-  1: 'success',
-}
-const statusTextMap: Record<number, string> = {
-  0: '禁用',
-  1: '启用',
+const rules: FormRules<UserForm> = {
+  username: [{required: true, message: '请输入用户名', trigger: 'blur'}],
+  password: [{
+    validator: (_rule, value, callback) => {
+      if (!editingId.value && !value) {
+        callback(new Error('请输入密码'))
+        return
+      }
+      callback()
+    },
+    trigger: 'blur'
+  }],
 }
 
-// 获取用户列表
+const formatDateTime = (value?: string) => {
+  if (!value) return '-'
+  return value.replace('T', ' ').slice(0, 16)
+}
+
+const showRequestError = (error: any, fallback: string) => {
+  ElMessage.error(error?.response?.data?.message || error?.message || fallback)
+}
+
 const getUsers = async () => {
   tableLoading.value = true
   try {
-    const result = await getUserPage({
+    const result: any = await getUserPage({
       currentPage: currentPage.value,
       pageSize: pageSize.value,
-      username: queryForm.username || undefined,
-      status: queryForm.status !== '' ? queryForm.status : undefined,
-      phone: queryForm.phone || undefined,
+      params: [{name: 'username', value: queryForm.username}],
     })
-    userList.value = result.data?.records || []
+    userList.value = (result.data?.records || []).map((item: UserItem) => ({
+      ...item,
+      roleIds: Array.isArray(item.roleIds) ? item.roleIds : [],
+      roleNames: Array.isArray(item.roleNames) ? item.roleNames : [],
+    }))
     total.value = Number(result.data?.total || 0)
+  } catch (error: any) {
+    showRequestError(error, '用户列表加载失败')
   } finally {
     tableLoading.value = false
   }
 }
 
-// 打开弹窗（新增/编辑）
-const openUserDialog = (row?: any) => {
+const getRoles = async () => {
+  try {
+    const result: any = await getRoleInfoPage({
+      currentPage: 1,
+      pageSize: 100,
+      params: [{name: 'roleName', value: ''}],
+    })
+    roleOptions.value = result.data?.records || []
+  } catch (error: any) {
+    showRequestError(error, '角色列表加载失败')
+  }
+}
+
+const handleSearch = () => {
+  currentPage.value = 1
+  getUsers()
+}
+
+const resetSearch = () => {
+  queryForm.username = ''
+  handleSearch()
+}
+
+const handleSizeChange = (size: number) => {
+  pageSize.value = size
+  currentPage.value = 1
+  getUsers()
+}
+
+const handleCurrentChange = (page: number) => {
+  currentPage.value = page
+  getUsers()
+}
+
+const openUserDialog = (row?: UserItem) => {
   editingId.value = row?.id || null
+  userForm.value = row ? {
+    username: row.username,
+    password: '',
+    roleIds: [...row.roleIds],
+  } : emptyForm()
+  formRef.value?.clearValidate()
   dialogVisible.value = true
-
-  if (row) {
-    // 编辑时回显数据（不包含密码）
-    userForm.value = {
-      username: row.username,
-      password: '',
-      realName: row.realName,
-      phone: row.phone || '',
-      email: row.email || '',
-      status: row.status,
-    }
-  } else {
-    // 新增时重置表单
-    userForm.value = {
-      username: '',
-      password: '',
-      realName: '',
-      phone: '',
-      email: '',
-      status: 1,
-    }
-  }
 }
 
-// 提交表单
 const submitUser = async () => {
-  await formRef.value.validate()
+  if (!formRef.value) return
 
-  const payload: any = {
-    username: userForm.value.username,
-    realName: userForm.value.realName,
-    phone: userForm.value.phone,
-    email: userForm.value.email,
-    status: userForm.value.status,
+  const valid = await formRef.value.validate().catch(() => false)
+  if (!valid) return
+
+  submitting.value = true
+  try {
+    const payload = {
+      username: userForm.value.username,
+      password: userForm.value.password,
+      roleIds: userForm.value.roleIds,
+    }
+    const result: any = editingId.value
+        ? await updateUser(editingId.value, payload)
+        : await createUser(payload)
+
+    ElMessage.success(result.message || (editingId.value ? '用户已更新' : '用户已新增'))
+    dialogVisible.value = false
+    await getUsers()
+  } catch (error: any) {
+    showRequestError(error, '用户保存失败')
+  } finally {
+    submitting.value = false
   }
-
-  // 新增时才传密码
-  if (!editingId.value) {
-    payload.password = userForm.value.password
-  }
-
-  if (editingId.value) {
-    payload.id = editingId.value
-    await updateUser(payload)
-  } else {
-    await createUser(payload)
-  }
-
-  ElMessage.success(editingId.value ? '用户已更新' : '用户已新增')
-  dialogVisible.value = false
-  await getUsers()
 }
 
-// 删除用户
-const handleDelete = async (row: any) => {
-  await ElMessageBox.confirm(`确认删除用户“${row.username}”吗？`, '删除确认', {
-    confirmButtonText: '删除',
-    cancelButtonText: '取消',
-    type: 'warning',
-  })
-  await deleteUser(row.id)
-  ElMessage.success('用户已删除')
-  await getUsers()
+const handleDeleteUser = async (row: UserItem) => {
+  try {
+    await ElMessageBox.confirm(`确认删除用户“${row.username}”吗？`, '删除确认', {
+      confirmButtonText: '删除',
+      cancelButtonText: '取消',
+      type: 'warning',
+    })
+  } catch {
+    return
+  }
+
+  deletingIds.value.push(row.id)
+  try {
+    const result: any = await deleteUser(row.id)
+    ElMessage.success(result.message || '用户已删除')
+    if (userList.value.length === 1 && currentPage.value > 1) {
+      currentPage.value -= 1
+    }
+    await getUsers()
+  } catch (error: any) {
+    showRequestError(error, '用户删除失败')
+  } finally {
+    deletingIds.value = deletingIds.value.filter(id => id !== row.id)
+  }
 }
 
-// 页面加载
 onMounted(() => {
+  getRoles()
   getUsers()
 })
 </script>
 
 <template>
-  <!-- 搜索栏 + 新增按钮 -->
-  <div style="padding: 16px; background: #fff; margin-bottom: 16px; border-radius: 4px;">
-    <div style="display: flex; justify-content: space-between; margin-bottom: 12px;">
-      <h3 style="margin: 0;">用户管理</h3>
-      <el-button type="primary" @click="openUserDialog()">+ 新增用户</el-button>
+  <div class="user-page">
+    <div class="page-toolbar">
+      <div>
+        <h2>用户管理</h2>
+        <p>维护系统登录账号，并给用户分配角色。</p>
+      </div>
+      <el-button type="primary" @click="openUserDialog()">新增用户</el-button>
     </div>
 
-    <el-form :model="queryForm" inline>
-      <el-form-item label="用户名">
-        <el-input v-model="queryForm.username" placeholder="用户名" clearable />
-      </el-form-item>
-      <el-form-item label="手机号">
-        <el-input v-model="queryForm.phone" placeholder="手机号" clearable />
-      </el-form-item>
-      <el-form-item label="状态">
-        <el-select v-model="queryForm.status" placeholder="请选择" clearable style="width: 100px">
-          <el-option label="启用" :value="1" />
-          <el-option label="禁用" :value="0" />
-        </el-select>
-      </el-form-item>
-      <el-form-item>
-        <el-button type="primary" @click="getUsers">搜索</el-button>
-        <el-button @click="queryForm = { username: '', status: '', phone: '' }">重置</el-button>
-      </el-form-item>
-    </el-form>
+    <div class="list-panel">
+      <el-form :model="queryForm" inline class="query-form">
+        <el-form-item label="用户名">
+          <el-input
+              v-model="queryForm.username"
+              clearable
+              placeholder="请输入用户名"
+              @clear="handleSearch"
+              @keyup.enter="handleSearch"
+          />
+        </el-form-item>
+        <el-form-item>
+          <el-button type="primary" @click="handleSearch">查询</el-button>
+          <el-button @click="resetSearch">重置</el-button>
+        </el-form-item>
+      </el-form>
+
+      <el-table
+          v-loading="tableLoading"
+          :data="userList"
+          border
+          class="user-table"
+          height="100%"
+      >
+        <el-table-column prop="id" label="用户ID" width="110"/>
+        <el-table-column prop="username" label="用户名" min-width="160" show-overflow-tooltip/>
+        <el-table-column label="角色" min-width="220">
+          <template #default="{ row }">
+            <div v-if="row.roleNames.length" class="role-tags">
+              <el-tag v-for="roleName in row.roleNames" :key="roleName" size="small">
+                {{ roleName }}
+              </el-tag>
+            </div>
+            <span v-else>-</span>
+          </template>
+        </el-table-column>
+        <el-table-column label="创建时间" width="170">
+          <template #default="{ row }">{{ formatDateTime(row.createTime) }}</template>
+        </el-table-column>
+        <el-table-column label="更新时间" width="170">
+          <template #default="{ row }">{{ formatDateTime(row.updateTime) }}</template>
+        </el-table-column>
+        <el-table-column label="操作" width="160" fixed="right">
+          <template #default="{ row }">
+            <el-button type="primary" size="small" @click="openUserDialog(row)">编辑</el-button>
+            <el-button
+                type="danger"
+                size="small"
+                :loading="deletingIds.includes(row.id)"
+                @click="handleDeleteUser(row)"
+            >
+              删除
+            </el-button>
+          </template>
+        </el-table-column>
+      </el-table>
+
+      <div class="pagination-wrapper">
+        <el-pagination
+            v-model:current-page="currentPage"
+            v-model:page-size="pageSize"
+            :page-sizes="[10, 20, 50]"
+            :total="total"
+            layout="total, sizes, prev, pager, next, jumper"
+            @size-change="handleSizeChange"
+            @current-change="handleCurrentChange"
+        />
+      </div>
+    </div>
+
+    <el-dialog
+        v-model="dialogVisible"
+        :title="editingId ? '编辑用户' : '新增用户'"
+        width="520px"
+        destroy-on-close
+        align-center
+    >
+      <el-form ref="formRef" :model="userForm" :rules="rules" label-width="86px">
+        <el-form-item label="用户名" prop="username">
+          <el-input v-model="userForm.username" maxlength="50" placeholder="请输入用户名"/>
+        </el-form-item>
+        <el-form-item :label="editingId ? '新密码' : '密码'" prop="password">
+          <el-input
+              v-model="userForm.password"
+              type="password"
+              show-password
+              :placeholder="editingId ? '留空表示不修改密码' : '请输入密码'"
+          />
+        </el-form-item>
+        <el-form-item label="角色">
+          <el-select v-model="userForm.roleIds" multiple clearable placeholder="请选择角色" style="width: 100%">
+            <el-option
+                v-for="role in roleOptions"
+                :key="role.id"
+                :label="role.name"
+                :value="role.id"
+            />
+          </el-select>
+        </el-form-item>
+      </el-form>
+
+      <template #footer>
+        <el-button @click="dialogVisible = false">取消</el-button>
+        <el-button type="primary" :loading="submitting" @click="submitUser">
+          {{ editingId ? '保存修改' : '新增用户' }}
+        </el-button>
+      </template>
+    </el-dialog>
   </div>
-
-  <!-- 表格 -->
-  <el-table v-loading="tableLoading" :data="userList" border>
-    <el-table-column prop="id" label="用户ID" width="90" />
-    <el-table-column prop="username" label="用户名" min-width="120" show-overflow-tooltip />
-    <el-table-column prop="realName" label="真实姓名" min-width="100" />
-    <el-table-column prop="phone" label="手机号" min-width="130" />
-    <el-table-column prop="email" label="邮箱" min-width="160" show-overflow-tooltip />
-    <el-table-column label="状态" width="80">
-      <template #default="{ row }">
-        <el-tag :type="statusTagMap[row.status] || 'info'" size="small">
-          {{ statusTextMap[row.status] || row.status }}
-        </el-tag>
-      </template>
-    </el-table-column>
-    <el-table-column prop="createTime" label="创建时间" min-width="160" />
-    <el-table-column label="操作" width="160" fixed="right">
-      <template #default="{ row }">
-        <el-button type="primary" size="small" @click="openUserDialog(row)">编辑</el-button>
-        <el-button type="danger" size="small" @click="handleDelete(row)">删除</el-button>
-      </template>
-    </el-table-column>
-  </el-table>
-
-  <!-- 分页器 -->
-  <el-pagination
-      v-model:current-page="currentPage"
-      v-model:page-size="pageSize"
-      :total="total"
-      background
-      layout="total, sizes, prev, pager, next, jumper"
-      @size-change="getUsers"
-      @current-change="getUsers"
-      style="margin-top: 16px; text-align: right;"
-  />
-
-  <!-- 弹窗（新增/编辑） -->
-  <el-dialog
-      v-model="dialogVisible"
-      :title="editingId ? '编辑用户' : '新增用户'"
-      width="520px"
-      destroy-on-close
-      align-center
-  >
-    <el-form ref="formRef" :model="userForm" :rules="rules" label-width="90px">
-      <el-form-item label="用户名" prop="username">
-        <el-input v-model="userForm.username" maxlength="20" :disabled="!!editingId" placeholder="请输入用户名" />
-      </el-form-item>
-      <el-form-item label="密码" prop="password" v-if="!editingId">
-        <el-input v-model="userForm.password" type="password" maxlength="20" placeholder="请输入密码" show-password />
-      </el-form-item>
-      <el-form-item label="真实姓名" prop="realName">
-        <el-input v-model="userForm.realName" maxlength="50" placeholder="请输入真实姓名" />
-      </el-form-item>
-      <el-form-item label="手机号">
-        <el-input v-model="userForm.phone" maxlength="20" placeholder="请输入手机号" />
-      </el-form-item>
-      <el-form-item label="邮箱">
-        <el-input v-model="userForm.email" maxlength="100" placeholder="请输入邮箱" />
-      </el-form-item>
-      <el-form-item label="状态">
-        <el-radio-group v-model="userForm.status">
-          <el-radio :value="1">启用</el-radio>
-          <el-radio :value="0">禁用</el-radio>
-        </el-radio-group>
-      </el-form-item>
-    </el-form>
-    <template #footer>
-      <el-button @click="dialogVisible = false">取消</el-button>
-      <el-button type="primary" @click="submitUser">保存</el-button>
-    </template>
-  </el-dialog>
 </template>
 
 <style scoped>
+.user-page {
+  height: 100%;
+  padding: 22px;
+  background: #f5f7fb;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.page-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 18px;
+  padding: 18px 20px;
+  background: #fff;
+  border: 1px solid #e5e6eb;
+  border-radius: 8px;
+}
+
+.page-toolbar h2 {
+  margin: 0 0 6px;
+  color: #1f2d3d;
+  font-size: 22px;
+  font-weight: 600;
+}
+
+.page-toolbar p {
+  margin: 0;
+  color: #7a8499;
+  font-size: 14px;
+}
+
+.list-panel {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  gap: 12px;
+  padding: 16px;
+  background: #fff;
+  border: 1px solid #e5e6eb;
+  border-radius: 8px;
+}
+
+.query-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 8px;
+}
+
+.query-form :deep(.el-form-item) {
+  margin-bottom: 0;
+}
+
+.user-table {
+  min-height: 0;
+}
+
+.role-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.pagination-wrapper {
+  display: flex;
+  justify-content: flex-end;
+}
 </style>

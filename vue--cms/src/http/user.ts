@@ -1,21 +1,47 @@
-import request from '@/http/request'
+import axios from "@/http/axios.ts";
 
-// 分页查询用户
-export const getUserPage = (params: any) => {
-    return request.get('/api/users/page', { params })
+export interface UserPayload {
+    username: string
+    password?: string
+    roleIds: number[]
 }
 
-// 新增用户
-export const createUser = (data: any) => {
-    return request.post('/api/users', data)
+export interface UserPageQuery {
+    currentPage: number
+    pageSize: number
+    params: Array<{
+        name: string
+        value: string
+    }>
 }
 
-// 更新用户
-export const updateUser = (data: any) => {
-    return request.put(`/api/users/${data.id}`, data)
+export const getUserPage = (data: UserPageQuery) => {
+    return axios({
+        url: '/api/user/page',
+        method: 'POST',
+        data
+    })
 }
 
-// 删除用户
-export const deleteUser = (id: number) => {
-    return request.delete(`/api/users/${id}`)
+export const createUser = (data: UserPayload) => {
+    return axios({
+        url: '/api/user',
+        method: 'POST',
+        data
+    })
+}
+
+export const updateUser = (id: string, data: UserPayload) => {
+    return axios({
+        url: `/api/user/${id}`,
+        method: 'PUT',
+        data
+    })
+}
+
+export const deleteUser = (id: string) => {
+    return axios({
+        url: `/api/user/${id}`,
+        method: 'DELETE'
+    })
 }
