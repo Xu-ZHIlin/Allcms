@@ -17,16 +17,12 @@ jobs:
 
     steps:
       - name: 拉取代码
-        run: |
-          export PATH=/usr/local/bin:/usr/bin:$PATH
-          # 清空当前目录所有文件
-          rm -rf ./*
-          # 克隆到当前目录，不嵌套文件夹
-          git clone --depth 1 -b main git@github.com:Xu-ZHIlin/Allcms.git temp_repo
-          mv temp_repo/* .
-          rm -rf temp_repo
-          # 打印目录校验，方便排错
-          ls -la
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: 查看目录结构
+        run: ls -la
 
       # ======================
       # 1. 打包后端 Java
@@ -71,17 +67,16 @@ jobs:
           sleep 5
 
       # ======================
-      # 5. 部署两个前端 dist 到 Nginx
+      # 5. 部署前端到 Nginx
       # ======================
-      - name: 部署管理端前端到 Nginx
+      - name: 部署管理端前端
         run: |
           sudo rm -rf /usr/share/nginx/html/admin
           sudo cp -r vue--cms/dist /usr/share/nginx/html/admin
 
-      - name: 部署客户端前端到 Nginx
+      - name: 部署客户端前端
         run: |
           sudo rm -rf /usr/share/nginx/html/news
-          # 修复：vue-news 不是 vue-cms
           sudo cp -r vue-news/dist /usr/share/nginx/html/news
 
       - name: 重启 Nginx
