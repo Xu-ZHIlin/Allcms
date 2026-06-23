@@ -1,70 +1,72 @@
-name: CMS 全项目部署（后端+管理端+客户端）
+name: Simple Deploy CMS
 
 on:
   push:
     branches: [ main ]
-  workflow_dispatch:
-    inputs:
-      force_rebuild:
-        description: '是否强制重新打包构建?'
-        required: true
-        type: boolean
-        default: false
 
 jobs:
-  build-and-deploy:
-    runs-on: self-hosted
+  deploy:
+    runs-on: ubuntu-latest
 
     steps:
-      - name: 拉取代码
+      - name: Checkout code
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 1
-
-      - name: 查看目录结构
-        run: ls -la
 
       # ======================
-      # 1. 打包后端 Java
+      # 1️⃣ 构建 Vue
       # ======================
-      - name: 打包后端（cms2）
-        run: |
-          export JAVA_HOME=/opt/jdk-17.0.14
-          export PATH=$JAVA_HOME/bin:/opt/maven/bin:$PATH
-          cd cms2
-          mvn clean package -DskipTests
-
-      # ======================
-      # 2. 打包管理端 Vue
-      # ======================
-      - name: 打包管理端（vue--cms）
+      - name: Build Vue Frontend
         run: |
           cd vue--cms
           npm install
           npm run build
 
       # ======================
-      # 3. 部署后端 jar
+      # 2️⃣ 构建 Spring Boot
       # ======================
-      - name: 部署后端
+      - name: Build Backend
         run: |
-          export JAVA_HOME=/opt/jdk-17.0.14
-          REL_DIR="/app/cms/releases/${{ github.sha }}"
-          sudo mkdir -p $REL_DIR
-          sudo cp cms2/target/*.jar $REL_DIR/my-cms.jar
-          sudo ln -snf $REL_DIR/my-cms.jar /app/cms/current.jar
-          cd /app/cms/releases && ls -t | tail -n +6 | xargs sudo rm -rf 2>/dev/null || true
-          sudo systemctl restart cms
-          sleep 5
+          cd cms2
+          mvn clean package -DskipTests
 
       # ======================
-      # 4. 部署管理端前端到 Nginx
+      # 3️⃣ 上传服务器
       # ======================
-      - name: 部署管理端前端
-        run: |
-          sudo rm -rf /usr/share/nginx/html/admin
-          sudo cp -r vue--cms/dist /usr/share/nginx/html/admin
+      - name: Upload to Server
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SERVER_SSH_KEY }}
+          port: 22
+          source: |
+            vue--cms/dist
+            cms2/target/*.jar
+          target: /www/cms
 
-      - name: 重启 Nginx
-        run: |
-          sudo systemctl restart nginx
+      # ======================
+      # 4️⃣ 远程启动
+      # ======================
+      - name: Start Service
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SERVER_SSH_KEY }}
+          script: |
+
+            echo "Stop old backend"
+            pkill -f cms2 || true
+            pkill -f jar || true
+
+            echo "Start backend"
+            cd /www/cms
+            mv cms2/target/*.jar app.jar
+
+            nohup java -jar app.jar > backend.log 2>&1 &
+
+            echo "Deploy frontend"
+            rm -rf /var/www/html/*
+            cp -r vue--cms/dist/* /var/www/html/
+
+            echo "DONE"
