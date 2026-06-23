@@ -1,72 +1,53 @@
-name: Simple Deploy CMS
+name: Vue-Frontend-CMS
 
 on:
   push:
     branches: [ main ]
 
 jobs:
-  deploy:
-    runs-on: ubuntu-latest
+  deploy-vue:
+    runs-on: self-hosted
 
     steps:
-      - name: Checkout code
+      # =========================================================
+      # 1. 拉取代码（保持老师风格）
+      # =========================================================
+      - name: Checkout Source
         uses: actions/checkout@v4
 
-      # ======================
-      # 1️⃣ 构建 Vue
-      # ======================
-      - name: Build Vue Frontend
+      # =========================================================
+      # 2. 构建 Vue（适配你的 vue--cms）
+      # =========================================================
+      - name: Build Vue Project
         run: |
           cd vue--cms
           npm install
           npm run build
 
-      # ======================
-      # 2️⃣ 构建 Spring Boot
-      # ======================
-      - name: Build Backend
+      # =========================================================
+      # 3. 发布 dist（保持老师“发布结构思想”）
+      # =========================================================
+      - name: Release Dist to Server
         run: |
-          cd cms2
-          mvn clean package -DskipTests
+          VUE_RELEASE_DIR="/app/vue-cms/releases/${{ github.sha }}"
+          
+          mkdir -p $VUE_RELEASE_DIR
+          
+          cp -r vue--cms/dist/* $VUE_RELEASE_DIR/
 
-      # ======================
-      # 3️⃣ 上传服务器
-      # ======================
-      - name: Upload to Server
-        uses: appleboy/scp-action@v0.1.7
-        with:
-          host: ${{ secrets.SERVER_HOST }}
-          username: ${{ secrets.SERVER_USER }}
-          key: ${{ secrets.SERVER_SSH_KEY }}
-          port: 22
-          source: |
-            vue--cms/dist
-            cms2/target/*.jar
-          target: /www/cms
+          ln -snf $VUE_RELEASE_DIR /app/vue-cms/current
 
-      # ======================
-      # 4️⃣ 远程启动
-      # ======================
-      - name: Start Service
-        uses: appleboy/ssh-action@v1.0.3
-        with:
-          host: ${{ secrets.SERVER_HOST }}
-          username: ${{ secrets.SERVER_USER }}
-          key: ${{ secrets.SERVER_SSH_KEY }}
-          script: |
+      # =========================================================
+      # 4. Nginx 指向 current（老师核心思想保留）
+      # =========================================================
+      - name: Update Nginx Link
+        run: |
+          ln -snf /app/vue-cms/current /var/www/vue-project
 
-            echo "Stop old backend"
-            pkill -f cms2 || true
-            pkill -f jar || true
-
-            echo "Start backend"
-            cd /www/cms
-            mv cms2/target/*.jar app.jar
-
-            nohup java -jar app.jar > backend.log 2>&1 &
-
-            echo "Deploy frontend"
-            rm -rf /var/www/html/*
-            cp -r vue--cms/dist/* /var/www/html/
-
-            echo "DONE"
+      # =========================================================
+      # 5. 清理旧版本（老师版本管理逻辑保留）
+      # =========================================================
+      - name: Clean Old Releases
+        run: |
+          cd /app/vue-cms/releases
+          ls -t | tail -n +6 | xargs rm -rf 2>/dev/null || true
