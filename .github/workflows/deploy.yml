@@ -44,16 +44,7 @@ jobs:
           npm run build
 
       # ======================
-      # 3. 打包客户端 Vue
-      # ======================
-      - name: 打包客户端（vue-news）
-        run: |
-          cd vue-news
-          npm install
-          npm run build
-
-      # ======================
-      # 4. 部署后端 jar
+      # 3. 部署后端 jar
       # ======================
       - name: 部署后端
         run: |
@@ -67,17 +58,12 @@ jobs:
           sleep 5
 
       # ======================
-      # 5. 部署前端到 Nginx
+      # 4. 部署管理端前端到 Nginx
       # ======================
       - name: 部署管理端前端
         run: |
           sudo rm -rf /usr/share/nginx/html/admin
           sudo cp -r vue--cms/dist /usr/share/nginx/html/admin
-
-      - name: 部署客户端前端
-        run: |
-          sudo rm -rf /usr/share/nginx/html/news
-          sudo cp -r vue-news/dist /usr/share/nginx/html/news
 
       - name: 重启 Nginx
         run: |
