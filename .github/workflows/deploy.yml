@@ -37,7 +37,7 @@ jobs:
       # ======================
       - name: 打包管理端（vue-cms）
         run: |
-          cd vue-cms
+          cd vue--cms
           npm install
           npm run build
 
