@@ -16,16 +16,17 @@ jobs:
     runs-on: self-hosted
 
     steps:
-      - name: 拉取代码
+      - name: 拉取代码（ghproxy镜像加速HTTPS克隆）
         run: |
           export PATH=/usr/local/bin:/usr/bin:$PATH
-          # 清空当前目录所有文件
+          # 清空当前目录所有旧文件
           rm -rf ./*
-          # 克隆到当前目录，不嵌套文件夹
-          git clone --depth 1 -b main git@github.com:Xu-ZHIlin/-cms-.git temp_repo
+          # 使用国内ghproxy镜像克隆真实仓库Allcms，HTTPS无需SSH密钥
+          git clone --depth 1 -b main https://mirror.ghproxy.com/https://github.com/Xu-ZHllin/Allcms.git temp_repo
+          # 把代码移动到根目录，避免文件夹嵌套导致cd找不到vue-news
           mv temp_repo/* .
           rm -rf temp_repo
-          # 打印目录校验，方便排错
+          # 打印根目录文件，排错用
           ls -la
 
       # ======================
@@ -81,7 +82,6 @@ jobs:
       - name: 部署客户端前端到 Nginx
         run: |
           sudo rm -rf /usr/share/nginx/html/news
-          # 修复：vue-news 不是 vue-cms
           sudo cp -r vue-news/dist /usr/share/nginx/html/news
 
       - name: 重启 Nginx
