@@ -7,7 +7,6 @@ import Content from "@/nav/components/content.vue";
 <template>
   <div class="main">
     <Aside>
-      树形菜单
     </Aside>
     <Content>
     </Content>

@@ -1,0 +1,102 @@
+name: Vue-Frontend-News   # 👈 改个名字，不要跟原有的重名
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'vue-dept7/src/**'      # 👈 改成你的客户端目录
+      - 'vue-dept7/public/**'   # 👈 改成你的客户端目录
+      - 'vue-dept7/index.html'  # 👈 改成你的客户端目录
+      - 'vue-dept7/package.json' # 👈 改成你的客户端目录
+      - 'vue-dept7/vite.config.*' # 👈 改成你的客户端目录
+  workflow_dispatch:
+    inputs:
+      force_rebuild:
+        description: '是否强制重新编译打包 (Build & Deploy)?'
+        required: true
+        type: boolean
+        default: false
+
+jobs:
+  deploy-vue-news:   # 👈 改个名字
+    runs-on: [self-hosted]   # 👈 去掉 vue-builder 标签（因为你没有这个标签的 Runner）
+
+    steps:
+      - name: Native Git Checkout with SSH
+        run: |
+          export PATH=/usr/local/bin:/usr/bin:/usr/local/sbin:/usr/sbin:$PATH
+          find . -mindepth 1 -delete 2>/dev/null || true
+          git clone --depth 1 -b main git@github.com:Xu-ZHilin/Allcms.git .   # 👈 改成你的仓库地址
+
+      # =========================================================
+      # 阶段二：前端核心文件 MD5 指纹检测（保持不变）
+      # =========================================================
+      - name: Frontend MD5 Fingerprint Detection
+        id: filter
+        run: |
+          export PATH=/usr/local/bin:/usr/bin:/usr/local/sbin:/usr/sbin:$PATH
+          CACHE_DIR="/tmp/vue_news_deploy_cache"   # 👈 换个缓存目录，跟管理端区分开
+          sudo mkdir -p $CACHE_DIR
+          sudo chown -R $(whoami):$(whoami) $CACHE_DIR
+          OLD_FINGERPRINT="$CACHE_DIR/last_news_md5.txt"
+          CURRENT_FINGERPRINT=$(find vue-dept7/src/ vue-dept7/public/ vue-dept7/package.json -type f 2>/dev/null | sort | xargs md5sum 2>/dev/null | md5sum | cut -d' ' -f1)   # 👈 路径加上 vue-dept7/
+          echo "Current News Fingerprint: $CURRENT_FINGERPRINT"
+          NEED_BUILD="false"
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ github.event.inputs.force_rebuild }}" = "true" ]; then
+              echo "Decision: Manual Force Build."
+              NEED_BUILD="true"
+          elif [ ! -f "$OLD_FINGERPRINT" ]; then
+              echo "Decision: No cache found. First time build."
+              NEED_BUILD="true"
+          elif [ "$CURRENT_FINGERPRINT" != "$(cat $OLD_FINGERPRINT 2>/dev/null)" ]; then
+              echo "Decision: Source code changed."
+              NEED_BUILD="true"
+          else
+              echo "Decision: Code identical. Skip build."
+              NEED_BUILD="false"
+          fi
+          echo "$CURRENT_FINGERPRINT" > "$OLD_FINGERPRINT" || true
+          if [ "$NEED_BUILD" = "true" ]; then
+              touch ./RUN_NEWS_BUILD   # 👈 换个标记文件名
+              if [ -d "vue-dept7/dist" ]; then   # 👈 路径加上 vue-dept7/
+                  sudo rm -rf vue-dept7/dist/ || rm -rf vue-dept7/dist/ || true
+              fi
+          fi
+          echo "code_changed=$NEED_BUILD" >> $GITHUB_OUTPUT
+          exit 0
+
+      # =========================================================
+      # 阶段三：安装依赖并构建
+      # =========================================================
+      - name: Install Dependencies and Build Vue News
+        run: |
+          if [ -f "./RUN_NEWS_BUILD" ]; then   # 👈 用刚才的标记文件名
+              echo "Executing NodeJS Build for News..."
+              export PATH=/usr/bin:/usr/local/bin:/bin:$PATH
+              node -v
+              npm -v
+              cd vue-dept7   # 👈 进入客户端目录
+              npm install --registry=https://registry.npmmirror.com
+              npm run build
+          else
+              echo "Skip NodeJS Build: Source code hash is unchanged."
+          fi
+
+      # =========================================================
+      # 阶段四：发布到服务器
+      # =========================================================
+      - name: Local Release and Nginx Link Management
+        run: |
+          export PATH=/usr/local/bin:/usr/bin:/usr/local/sbin:/usr/sbin:$PATH
+          if [ -f "./RUN_NEWS_BUILD" ]; then   # 👈 用刚才的标记文件名
+              echo "Action: Deploying New News Version"
+              VUE_REL_DIR="/app/vue-news/releases/${{ github.sha }}"   # 👈 改为 vue-news
+              mkdir -p $VUE_REL_DIR
+              cp -r vue-dept7/dist/* $VUE_REL_DIR/   # 👈 路径加上 vue-dept7/
+              ln -snf $VUE_REL_DIR /app/vue-news/current   # 👈 改为 vue-news
+              ln -snf /app/vue-news/current /var/www/vue-news   # 👈 改为 vue-news
+              cd /app/vue-news/releases && ls -t | tail -n +6 | xargs rm -rf 2>/dev/null || true   # 👈 改为 vue-news
+              echo "News deployment successful!"
+          else
+              echo "No deployment needed. News is up to date."
+          fi

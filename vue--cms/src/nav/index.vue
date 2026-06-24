@@ -1,8 +1,5 @@
 <script setup lang="ts">
-
-import Top from "@/nav/components/top.vue";
 import Main from "@/nav/components/main.vue";
-import Footer from "@/nav/components/footer.vue";
 </script>
 
 <template>

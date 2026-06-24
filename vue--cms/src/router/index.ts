@@ -1,29 +1,30 @@
 import {createRouter, createWebHistory} from 'vue-router'
-import Index from "@/nav/index.vue";
-import UserManage from "@/view/UserManage.vue";
-import Login from "@/view/Login.vue";
-import RoleInfo from "@/view/RoleInfo.vue";
-import Welcome from "@/view/Welcome.vue";
-import PermissionManage from "@/view/PermissionManage.vue";
-
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
   routes: [
-    {path: '/', component: Login},
+    // 登录页
+    {path: '/', component: () => import('@/view/Login.vue')},
+    // 后台主布局框架（侧边栏+内容容器）
     {
       path: '/dashboard',
-      component: Index,
+      component: () => import('@/nav/index.vue'),
       redirect: '/dashboard/welcome',
       children:[
-        {path: '/dashboard/welcome', component: Welcome},
-        {path: '/dashboard/use/userManage', component: UserManage},
-        {path: '/dashboard/role/roleInfo', component: RoleInfo},
-        {path: '/role/list', name: 'RoleInfo', component: RoleInfo},
-        {path: '/permission/list', name: 'PermissionManage', component: PermissionManage},
-        {path: '/account/user', name: 'UserManage', component: UserManage},
+        {path: '/dashboard/welcome', component: () => import('@/view/Welcome.vue')},
+        {path: '/dashboard/use/userManage', component: () => import('@/view/UserManage.vue')},
+        {path: '/dashboard/role/roleInfo', component: () => import('@/view/RoleInfo.vue')},
+        {path: '/role/list', name: 'RoleInfo', component: () => import('@/view/RoleInfo.vue')},
+        {path: '/permission/list', name: 'PermissionManage', component: () => import('@/view/PermissionManage.vue')},
+        {path: '/account/user', name: 'UserManage', component: () => import('@/view/UserManage.vue')},
+        // 新增【新闻管理页面】和老师文档路径保持一致
+        {
+          path: '/content/news',
+          name: 'NewsManager',
+          component: () => import('@/view/NewsManager.vue')
+        }
       ]
-    },//全部都是在index下
+    }
   ],
 })
 
