@@ -1,11 +1,13 @@
-name: Deploy Admin & Client
+name: Deploy CMS System (Admin, Client & Backend)
 
 on:
   push:
     branches: [ main ]
 
 jobs:
-  # 1. 管理端 (vue--cms) 构建与部署
+  # =========================================================
+  # 1. 管理端 (vue--cms) 构建与部署 (81端口)
+  # =========================================================
   deploy-admin:
     runs-on: self-hosted
     steps:
@@ -20,14 +22,14 @@ jobs:
 
       - name: Deploy Admin to /app/cms/web/admin
         run: |
-          # 清空目标目录（防止旧文件残留导致 404 或样式错乱）
           sudo rm -rf /app/cms/web/admin/*
-          # 将新构建的 dist 复制过去
           sudo cp -r vue--cms/dist/* /app/cms/web/admin/
-          # 确保 Nginx 用户有读取权限
           sudo chmod -R 755 /app/cms/web/admin
+          sudo chown -R www-data:www-data /app/cms/web/admin
 
-  # 2. 客户端 (vue-dept7) 构建与部署
+  # =========================================================
+  # 2. 客户端 (vue-dept7) 构建与部署 (82端口)
+  # =========================================================
   deploy-client:
     runs-on: self-hosted
     steps:
@@ -45,3 +47,35 @@ jobs:
           sudo rm -rf /app/cms/web/client/*
           sudo cp -r vue-dept7/dist/* /app/cms/web/client/
           sudo chmod -R 755 /app/cms/web/client
+          sudo chown -R www-data:www-data /app/cms/web/client
+
+  # =========================================================
+  # 3. 后端 Spring Boot 构建与自动部署 (8080端口)
+  # =========================================================
+  deploy-backend:
+    runs-on: self-hosted
+    needs: [deploy-admin, deploy-client]  # 等两个前端部署完成后再部署后端
+    steps:
+      - name: Checkout Source
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Build Backend JAR
+        run: mvn clean package -DskipTests
+
+      - name: Deploy JAR to Server & Restart Service
+        run: |
+          # 1. 把新打包好的 jar 复制并覆盖到你的后端目录
+          sudo cp target/*.jar /app/cms/current.jar
+          
+          # 2. 防止权限不匹配，强制给 systemd 授权
+          sudo chown root:root /app/cms/current.jar
+          sudo chmod 755 /app/cms/current.jar
+          
+          # 3. 自动重启后端服务，完成更新
+          sudo systemctl restart backend.service
