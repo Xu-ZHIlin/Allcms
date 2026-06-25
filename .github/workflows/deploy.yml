@@ -1,4 +1,4 @@
-name: Deploy CMS System (Admin, Client & Backend)
+name: 全自动前端部署 (管理端 & 客户端)
 
 on:
   push:
@@ -6,85 +6,104 @@ on:
 
 jobs:
   # =========================================================
-  # 1. 管理端 (vue--cms) 构建与部署 (81端口)
+  # 1. 管理端 (vue--cms) 构建与版本化部署 (81端口)
   # =========================================================
   deploy-admin:
     runs-on: self-hosted
     steps:
-      # 👇 替换为原生 Git 克隆，绕过 HTTPS 网络阻断
-      - name: Checkout Source (SSH native git)
+      - name: Native Git Checkout (SSH)
         run: |
           export PATH=/usr/local/bin:/usr/bin:/usr/local/sbin:/usr/sbin:$PATH
-          # 清理当前目录，避免冲突
           find . -mindepth 1 -delete 2>/dev/null || true
-          # 使用 SSH 方式克隆（你的旧文件用的就是这个）
           git clone --depth 1 -b main git@github.com:Xu-ZHilin/Allcms.git .
 
-      - name: Build Admin (vue--cms)
+      - name: MD5 Change Detection
+        id: filter_admin
+        run: |
+          export PATH=/usr/local/bin:/usr/bin:/usr/local/sbin:/usr/sbin:$PATH
+          CACHE_DIR="/tmp/admin_deploy_cache"
+          sudo mkdir -p $CACHE_DIR
+          sudo chown -R $(whoami):$(whoami) $CACHE_DIR
+          OLD_FINGERPRINT="$CACHE_DIR/last_admin_md5.txt"
+          CURRENT_FINGERPRINT=$(find vue--cms/src/ vue--cms/public/ vue--cms/package.json -type f 2>/dev/null | sort | xargs md5sum 2>/dev/null | md5sum | cut -d' ' -f1)
+          echo "Current MD5: $CURRENT_FINGERPRINT"
+          NEED_BUILD="false"
+          if [ ! -f "$OLD_FINGERPRINT" ] || [ "$CURRENT_FINGERPRINT" != "$(cat $OLD_FINGERPRINT 2>/dev/null)" ]; then
+              echo "Decision: Code changed. Build needed."
+              NEED_BUILD="true"
+          else
+              echo "Decision: Code identical. Skip build."
+              NEED_BUILD="false"
+          fi
+          echo "$CURRENT_FINGERPRINT" > "$OLD_FINGERPRINT" || true
+          echo "code_changed=$NEED_BUILD" >> $GITHUB_OUTPUT
+
+      - name: Build Admin
+        if: steps.filter_admin.outputs.code_changed == 'true'
         run: |
           cd vue--cms
-          npm install
+          npm install --registry=https://registry.npmmirror.com
           npm run build
 
-      - name: Deploy Admin to /app/cms/web/admin
+      - name: Deploy Admin (版本化发布)
+        if: steps.filter_admin.outputs.code_changed == 'true'
         run: |
-          sudo rm -rf /app/cms/web/admin/*
-          sudo cp -r vue--cms/dist/* /app/cms/web/admin/
-          sudo chmod -R 755 /app/cms/web/admin
+          VUE_RELEASE_DIR="/app/cms/releases/admin/${{ github.sha }}"
+          sudo mkdir -p $VUE_RELEASE_DIR
+          sudo cp -r vue--cms/dist/* $VUE_RELEASE_DIR/
+          sudo rm -rf /app/cms/web/admin
+          sudo ln -snf $VUE_RELEASE_DIR /app/cms/web/admin
           sudo chown -R www-data:www-data /app/cms/web/admin
+          cd /app/cms/releases/admin && ls -t | tail -n +6 | sudo xargs rm -rf 2>/dev/null || true
 
   # =========================================================
-  # 2. 客户端 (vue-dept7) 构建与部署 (82端口)
+  # 2. 客户端 (vue-dept7) 构建与版本化部署 (82端口)
   # =========================================================
   deploy-client:
     runs-on: self-hosted
+    needs: deploy-admin   # 可选：让它们串行执行（如果你想并行，删掉这行就行）
     steps:
-      # 👇 替换为原生 Git 克隆，绕过 HTTPS 网络阻断
-      - name: Checkout Source (SSH native git)
+      - name: Native Git Checkout (SSH)
         run: |
           export PATH=/usr/local/bin:/usr/bin:/usr/local/sbin:/usr/sbin:$PATH
           find . -mindepth 1 -delete 2>/dev/null || true
           git clone --depth 1 -b main git@github.com:Xu-ZHilin/Allcms.git .
 
-      - name: Build Client (vue-dept7)
+      - name: MD5 Change Detection
+        id: filter_client
+        run: |
+          export PATH=/usr/local/bin:/usr/bin:/usr/local/sbin:/usr/sbin:$PATH
+          CACHE_DIR="/tmp/client_deploy_cache"
+          sudo mkdir -p $CACHE_DIR
+          sudo chown -R $(whoami):$(whoami) $CACHE_DIR
+          OLD_FINGERPRINT="$CACHE_DIR/last_client_md5.txt"
+          CURRENT_FINGERPRINT=$(find vue-dept7/src/ vue-dept7/public/ vue-dept7/package.json -type f 2>/dev/null | sort | xargs md5sum 2>/dev/null | md5sum | cut -d' ' -f1)
+          echo "Current MD5: $CURRENT_FINGERPRINT"
+          NEED_BUILD="false"
+          if [ ! -f "$OLD_FINGERPRINT" ] || [ "$CURRENT_FINGERPRINT" != "$(cat $OLD_FINGERPRINT 2>/dev/null)" ]; then
+              echo "Decision: Code changed. Build needed."
+              NEED_BUILD="true"
+          else
+              echo "Decision: Code identical. Skip build."
+              NEED_BUILD="false"
+          fi
+          echo "$CURRENT_FINGERPRINT" > "$OLD_FINGERPRINT" || true
+          echo "code_changed=$NEED_BUILD" >> $GITHUB_OUTPUT
+
+      - name: Build Client
+        if: steps.filter_client.outputs.code_changed == 'true'
         run: |
           cd vue-dept7
-          npm install
+          npm install --registry=https://registry.npmmirror.com
           npm run build
 
-      - name: Deploy Client to /app/cms/web/client
+      - name: Deploy Client (版本化发布)
+        if: steps.filter_client.outputs.code_changed == 'true'
         run: |
-          sudo rm -rf /app/cms/web/client/*
-          sudo cp -r vue-dept7/dist/* /app/cms/web/client/
-          sudo chmod -R 755 /app/cms/web/client
+          VUE_RELEASE_DIR="/app/cms/releases/client/${{ github.sha }}"
+          sudo mkdir -p $VUE_RELEASE_DIR
+          sudo cp -r vue-dept7/dist/* $VUE_RELEASE_DIR/
+          sudo rm -rf /app/cms/web/client
+          sudo ln -snf $VUE_RELEASE_DIR /app/cms/web/client
           sudo chown -R www-data:www-data /app/cms/web/client
-
-  # =========================================================
-  # 3. 后端 Spring Boot 构建与自动部署 (8080端口)
-  # =========================================================
-  deploy-backend:
-    runs-on: self-hosted
-    needs: [deploy-admin, deploy-client]
-    steps:
-      # 👇 后端也要替换为原生 Git 克隆！
-      - name: Checkout Source (SSH native git)
-        run: |
-          export PATH=/usr/local/bin:/usr/bin:/usr/local/sbin:/usr/sbin:$PATH
-          find . -mindepth 1 -delete 2>/dev/null || true
-          git clone --depth 1 -b main git@github.com:Xu-ZHilin/Allcms.git .
-
-      - name: Set up JDK 17
-        uses: actions/setup-java@v4
-        with:
-          java-version: '17'
-          distribution: 'temurin'
-
-      - name: Build Backend JAR
-        run: mvn clean package -DskipTests
-
-      - name: Deploy JAR to Server & Restart Service
-        run: |
-          sudo cp target/*.jar /app/cms/current.jar
-          sudo chown root:root /app/cms/current.jar
-          sudo chmod 755 /app/cms/current.jar
-          sudo systemctl restart backend.service
+          cd /app/cms/releases/client && ls -t | tail -n +6 | sudo xargs rm -rf 2>/dev/null || true
