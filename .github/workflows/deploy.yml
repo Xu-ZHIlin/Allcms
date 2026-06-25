@@ -103,20 +103,23 @@ jobs:
 
       - name: Build Backend JAR (使用服务器本地 JDK)
         run: |
-          # 精确配置你的 Java 和 Maven 路径
+          # 1. 进入你准确的后端目录 cms2
+          cd cms2
+          
+          # 2. 使用服务器本地配置好的 Java 和 Maven 环境
           export JAVA_HOME=/opt/jdk-17.0.14
           export M2_HOME=/opt/maven
           export PATH=$JAVA_HOME/bin:$M2_HOME/bin:$PATH
           
-          # 编译并跳过测试
+          # 3. 编译并跳过测试（生成 jar 包）
           mvn clean package -DskipTests
 
       - name: Deploy JAR to Server & Restart Service
         run: |
-          # 1. 覆盖新的 jar 包到 current.jar
-          sudo cp target/*.jar /app/cms/current.jar
+          # 1. 将新生成的 jar 覆盖到 current.jar（注意这里要将 cms2/target 的 jar 拿出来）
+          sudo cp cms2/target/*.jar /app/cms/current.jar
           sudo chown root:root /app/cms/current.jar
           
-          # 2. 自动重启后端服务，读取 prod 环境和绝对路径配置
+          # 2. 自动重启后端服务，让它读取 prod 环境
           sudo systemctl daemon-reload
           sudo systemctl restart backend.service
