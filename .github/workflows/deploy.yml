@@ -1,53 +1,47 @@
-name: Vue-Frontend-CMS
+name: Deploy Admin & Client
 
 on:
   push:
     branches: [ main ]
 
 jobs:
-  deploy-vue:
+  # 1. 管理端 (vue--cms) 构建与部署
+  deploy-admin:
     runs-on: self-hosted
-
     steps:
-      # =========================================================
-      # 1. 拉取代码（保持老师风格）
-      # =========================================================
       - name: Checkout Source
         uses: actions/checkout@v4
 
-      # =========================================================
-      # 2. 构建 Vue（适配你的 vue--cms）
-      # =========================================================
-      - name: Build Vue Project
+      - name: Build Admin (vue--cms)
         run: |
           cd vue--cms
           npm install
           npm run build
 
-      # =========================================================
-      # 3. 发布 dist（保持老师“发布结构思想”）
-      # =========================================================
-      - name: Release Dist to Server
+      - name: Deploy Admin to /app/cms/web/admin
         run: |
-          VUE_RELEASE_DIR="/app/vue-cms/releases/${{ github.sha }}"
-          
-          mkdir -p $VUE_RELEASE_DIR
-          
-          cp -r vue--cms/dist/* $VUE_RELEASE_DIR/
+          # 清空目标目录（防止旧文件残留导致 404 或样式错乱）
+          sudo rm -rf /app/cms/web/admin/*
+          # 将新构建的 dist 复制过去
+          sudo cp -r vue--cms/dist/* /app/cms/web/admin/
+          # 确保 Nginx 用户有读取权限
+          sudo chmod -R 755 /app/cms/web/admin
 
-          ln -snf $VUE_RELEASE_DIR /app/vue-cms/current
+  # 2. 客户端 (vue-dept7) 构建与部署
+  deploy-client:
+    runs-on: self-hosted
+    steps:
+      - name: Checkout Source
+        uses: actions/checkout@v4
 
-      # =========================================================
-      # 4. Nginx 指向 current（老师核心思想保留）
-      # =========================================================
-      - name: Update Nginx Link
+      - name: Build Client (vue-dept7)
         run: |
-          ln -snf /app/vue-cms/current /var/www/vue-project
+          cd vue-dept7
+          npm install
+          npm run build
 
-      # =========================================================
-      # 5. 清理旧版本（老师版本管理逻辑保留）
-      # =========================================================
-      - name: Clean Old Releases
+      - name: Deploy Client to /app/cms/web/client
         run: |
-          cd /app/vue-cms/releases
-          ls -t | tail -n +6 | xargs rm -rf 2>/dev/null || true
+          sudo rm -rf /app/cms/web/client/*
+          sudo cp -r vue-dept7/dist/* /app/cms/web/client/
+          sudo chmod -R 755 /app/cms/web/client
