@@ -103,9 +103,12 @@ jobs:
 
       - name: Build Backend JAR (使用服务器本地 JDK)
         run: |
-          # 强制使用你服务器上安装的本地 JDK 路径，完全跳过远程下载
+          # 精确配置你的 Java 和 Maven 路径
           export JAVA_HOME=/opt/jdk-17.0.14
-          export PATH=$JAVA_HOME/bin:$PATH
+          export M2_HOME=/opt/maven
+          export PATH=$JAVA_HOME/bin:$M2_HOME/bin:$PATH
+          
+          # 编译并跳过测试
           mvn clean package -DskipTests
 
       - name: Deploy JAR to Server & Restart Service
