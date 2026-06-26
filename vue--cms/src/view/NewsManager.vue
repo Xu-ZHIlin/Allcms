@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, reactive, onMounted, shallowRef } from 'vue'
 import { ElMessage, ElMessageBox, type FormInstance, type FormRules } from 'element-plus'
-import { createNews, deleteNews, getNewsPage, updateNews } from '@/http/news.ts'
+import { approveNews, createNews, deleteNews, getNewsPage, rejectNews, updateNews } from '@/http/news.ts'
 import { Editor, Toolbar } from '@wangeditor/editor-for-vue'
 import '@wangeditor/editor/dist/css/style.css'
 import type { IDomEditor, IEditorConfig, IToolbarConfig } from '@wangeditor/editor'
@@ -58,6 +58,11 @@ const queryForm = reactive({
 })
 const deletingIds = ref<string[]>([])
 
+// ---------- 新增：审核状态 ----------
+const auditingIds = ref<string[]>([])
+const isAuditing = (id: string) => auditingIds.value.includes(id)
+const canAudit = (row: NewsItem) => row.status === 'PENDING_REVIEW'
+
 // ---------- 编辑器配置 ----------
 const toolbarConfig: Partial<IToolbarConfig> = { excludeKeys: ['fullScreen'] }
 const editorConfig: Partial<IEditorConfig> = {
@@ -88,7 +93,6 @@ const submitNews = async () => {
         ? await updateNews(editingId.value, payload)
         : await createNews(payload)
 
-    // ---- 修改点：统一成功提示为“保存成功” ----
     ElMessage.success('保存成功')
     dialogVisible.value = false
     await getNewsList()
@@ -177,6 +181,34 @@ const summary = (html: string, len = 60) => {
 }
 const isDeleting = (id: string) => deletingIds.value.includes(id)
 
+// ---------- 新增：审核方法 ----------
+const auditNews = async (row: NewsItem, action: 'approve' | 'reject') => {
+  const actionText = action === 'approve' ? '通过' : '驳回'
+  try {
+    await ElMessageBox.confirm(`确认${actionText}这条新闻吗？`, '审核确认', {
+      confirmButtonText: actionText,
+      cancelButtonText: '取消',
+      type: action === 'approve' ? 'success' : 'warning',
+    })
+  } catch {
+    return
+  }
+
+  auditingIds.value.push(row.id)
+  try {
+    const result: any = action === 'approve'
+        ? await approveNews(row.id)
+        : await rejectNews(row.id)
+
+    ElMessage.success(result.message || `新闻已${actionText}`)
+    await getNewsList()
+  } catch (error: any) {
+    ElMessage.error(error?.response?.data?.message || error?.message || `新闻${actionText}失败`)
+  } finally {
+    auditingIds.value = auditingIds.value.filter(id => id !== row.id)
+  }
+}
+
 // ---------- 生命周期 ----------
 onMounted(() => getNewsList())
 </script>
@@ -239,6 +271,31 @@ onMounted(() => getNewsList())
         <el-table-column label="更新时间" width="160">
           <template #default="{ row }">{{ formatDate(row.updateTime || row.createTime) }}</template>
         </el-table-column>
+
+        <!-- 新增：审核列 -->
+        <el-table-column label="审核" width="160" fixed="right">
+          <template #default="{ row }">
+            <el-button
+                type="success"
+                size="small"
+                :disabled="!canAudit(row)"
+                :loading="isAuditing(row.id)"
+                @click="auditNews(row, 'approve')"
+            >
+              通过
+            </el-button>
+            <el-button
+                type="danger"
+                size="small"
+                :disabled="!canAudit(row)"
+                :loading="isAuditing(row.id)"
+                @click="auditNews(row, 'reject')"
+            >
+              驳回
+            </el-button>
+          </template>
+        </el-table-column>
+
         <el-table-column label="操作" width="150" fixed="right">
           <template #default="{ row }">
             <el-button type="primary" size="small" @click="openDialog(row)">编辑</el-button>

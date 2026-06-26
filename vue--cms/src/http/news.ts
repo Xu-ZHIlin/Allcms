@@ -46,3 +46,16 @@ export const deleteNews = (id: string) => {
         method: 'DELETE'
     })
 }
+export const approveNews = (id: string) => {
+    return axios({
+        url: `/api/news/${id}/approve`,
+        method: 'PUT'
+    })
+}
+
+export const rejectNews = (id: string) => {
+    return axios({
+        url: `/api/news/${id}/reject`,
+        method: 'PUT'
+    })
+}

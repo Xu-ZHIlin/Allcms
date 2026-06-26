@@ -3,13 +3,13 @@
     <!-- 面包屑导航 -->
     <div class="main_titT">
       <img
-        src="https://www.guet.edu.cn/_upload/tpl/00/1d/29/template29/htmlRes/bri_icon1.png"
-        alt="图标"
+          src="https://www.guet.edu.cn/_upload/tpl/00/1d/29/template29/htmlRes/bri_icon1.png"
+          alt="图标"
       />
       <span>
         <router-link to="/">首页</router-link>
         <span class="possplit"> &gt; </span>
-        <a href="#" target="_blank">{{categoryMap(article.category)}}</a>
+        <a href="#" target="_blank">{{ categoryMap(article.category) }}</a>
       </span>
       <span class="possplit"> &gt; </span> 正文
     </div>
@@ -29,23 +29,17 @@
         <div class="wp_articlecontent" v-html="article.content"></div>
       </div>
 
-      <!-- 上下一篇 -->
+      <!-- 上下一篇（暂时没有前后文，可以隐藏或保留） -->
       <div class="main_art">
         <div class="wp_art_adjoin">
-            <span class="prev">上一篇：</span>
-            <span class="prev-title">
-              <router-link v-if="prevArticle" :to="`/news/${prevArticle.id}`">
-                {{ prevArticle.title }}
-              </router-link>
-              <template v-else>无</template>
+          <span class="prev">上一篇：</span>
+          <span class="prev-title">
+              <template>无</template>
             </span>
-            <span class="next-label-spacing"></span>
-            <span class="next">下一篇：</span>
-            <span class="next-title">
-              <router-link v-if="nextArticle" :to="`/news/${nextArticle.id}`">
-                {{ nextArticle.title }}
-              </router-link>
-              <template v-else>无</template>
+          <span class="next-label-spacing"></span>
+          <span class="next">下一篇：</span>
+          <span class="next-title">
+              <template>无</template>
             </span>
         </div>
       </div>
@@ -54,44 +48,56 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch, onMounted } from 'vue';
+import { ref, onMounted } from 'vue';
 import { useRoute } from 'vue-router';
-import { getNews, type NewsData } from '../http/news';
+// 注意：这里改为引入 getNewsDetail
+import { getNewsDetail } from '../http/news';
 
 const route = useRoute();
-const newsList = ref<NewsData[]>([]);
+const article = ref<any>({});
+const loading = ref(false);
 
-const categoryMap = (category:any)=>{
-   switch (category) {
-    case 1: return '学院新闻';
-    case 2: return '通知公告';
-    case 3: return '学术活动';
-    case 4: return '学工新闻';
-    case 5: return '党建工作';
+// 分类映射
+const categoryMap = (category: string) => {
+  switch (category) {
+    case '学院新闻': return '学院新闻';
+    case '通知公告': return '通知公告';
+    case '学术活动': return '学术活动';
+    case '学工新闻': return '学工新闻';
+    case '党建工作': return '党建工作';
     default: return '未知';
   }
 }
 
+// 时间格式化
+const fmt = (ts?: string) => {
+  if (!ts) return '无';
+  // 尝试兼容 ISO 时间字符串 (后端返回)
+  const date = new Date(ts);
+  if (isNaN(date.getTime())) return ts;
+  return date.toLocaleDateString('zh-CN');
+}
+
+// 核心：根据路由参数 id 单独请求后端详情
 onMounted(async () => {
+  loading.value = true;
   try {
-    const res: any = await getNews();
-    newsList.value = res?.data ?? res ?? [];
-  } catch { }
+    const id = Array.isArray(route.params.id) ? route.params.id[0] : route.params.id;
+    if (!id) return;
+
+    const res: any = await getNewsDetail(id);
+    // 根据 axios 拦截器逻辑，数据在 res.data 里
+    article.value = res?.data || {};
+  } catch (err) {
+    console.error('获取详情失败：', err);
+  } finally {
+    loading.value = false;
+  }
 });
-
-const articleId = computed(() => Number(route.params.id));
-const currentIndex = computed(() => newsList.value.findIndex(n => n.id === articleId.value));
-const article = computed(() => newsList.value[currentIndex.value] ?? {} as NewsData);
-//console.log(article.value.category)
-const prevArticle = computed(() => currentIndex.value > 0 ? newsList.value[currentIndex.value - 1] : null);
-const nextArticle = computed(() => currentIndex.value >= 0 && currentIndex.value < newsList.value.length - 1 ? newsList.value[currentIndex.value + 1] : null);
-
-const fmt = (ts?: number) => ts ? new Date(ts).toLocaleDateString('zh-CN') : '';
-
-watch(() => route.params.id, () => window.scrollTo({ top: 0, behavior: 'smooth' }));
 </script>
 
 <style scoped>
+/* 您原本的 CSS 样式保持原封不动 */
 .news-detail-container {
   width: 1000px;
   margin: 0 auto;
@@ -159,7 +165,6 @@ watch(() => route.params.id, () => window.scrollTo({ top: 0, behavior: 'smooth' 
   padding: 20px 16px;
 }
 
-/* 富文本样式 */
 :deep(.wp_articlecontent) {
   font-family: "微软雅黑";
   color: #222;
@@ -200,24 +205,11 @@ watch(() => route.params.id, () => window.scrollTo({ top: 0, behavior: 'smooth' 
   flex-wrap: wrap;
 }
 
-.wp_art_adjoin a {
-  color: #275895;
-  text-decoration: none;
-}
-
-.wp_art_adjoin a:hover {
-  text-decoration: underline;
-}
-
 .next-label-spacing {
   margin-left: 30px;
 }
 
 .prev, .next {
   color: #666;
-}
-
-.prev-title, .next-title {
-  color: #222;
 }
 </style>

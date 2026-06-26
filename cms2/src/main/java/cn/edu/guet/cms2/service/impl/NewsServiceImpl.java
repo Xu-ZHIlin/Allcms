@@ -16,12 +16,15 @@ import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 
+import java.time.LocalDateTime;
+
 @Service
 @Slf4j
 public class NewsServiceImpl implements NewsService {
-
+    // --- 补全状态常量 ---
     private static final String STATUS_PENDING_REVIEW = "PENDING_REVIEW";
-
+    private static final String STATUS_PUBLISHED = "PUBLISHED";
+    private static final String STATUS_REJECTED = "REJECTED";
     @Autowired
     private NewsMapper newsMapper;
 
@@ -136,5 +139,73 @@ public class NewsServiceImpl implements NewsService {
         NewsVO newsVO = new NewsVO();
         BeanUtils.copyProperties(news, newsVO);
         return newsVO;
+    }
+
+    // --- 新增：审核通过 ---
+    @Transactional(rollbackFor = Exception.class)
+    @Override
+    public NewsVO approveNews(Long id) {
+        News news = getReviewableNews(id);
+        news.setStatus(STATUS_PUBLISHED);
+        news.setPublishTime(LocalDateTime.now());
+        newsMapper.updateById(news);
+        return getNewsDetail(id);
+    }
+
+    // --- 新增：审核驳回 ---
+    @Transactional(rollbackFor = Exception.class)
+    @Override
+    public NewsVO rejectNews(Long id) {
+        News news = getReviewableNews(id);
+        news.setStatus(STATUS_REJECTED);
+        news.setPublishTime(null);
+        newsMapper.updateById(news);
+        return getNewsDetail(id);
+    }
+
+    // --- 新增：公开分页查询（只查已发布） ---
+    @Override
+    public IPage<NewsVO> getPublicNewsPage(PageRequest pageRequest) {
+        PageRequest safePageRequest = pageRequest == null ? new PageRequest() : pageRequest;
+        Page<News> page = new Page<>(safePageRequest.getCurrentPage(), safePageRequest.getPageSize());
+        QueryWrapper<News> queryWrapper = new QueryWrapper<>();
+
+        // 核心条件：只能查已发布的新闻
+        queryWrapper.eq("status", STATUS_PUBLISHED);
+
+        String keyword = safePageRequest.getParamValue("keyword");
+        if (StringUtils.hasText(keyword)) {
+            queryWrapper.and(w -> w.like("title", keyword).or().like("supplier", keyword).or().like("reviewer", keyword));
+        }
+        String category = safePageRequest.getParamValue("category");
+        if (StringUtils.hasText(category)) {
+            queryWrapper.eq("category", category);
+        }
+        // 按发布时间倒序
+        queryWrapper.orderByDesc("publish_time", "update_time", "id");
+
+        return newsMapper.selectPage(page, queryWrapper).convert(this::toVO);
+    }
+
+    // --- 新增：公开详情（校验是否已发布） ---
+    @Override
+    public NewsVO getPublicNewsDetail(Long id) {
+        News news = newsMapper.selectById(id);
+        if (news == null || !STATUS_PUBLISHED.equals(news.getStatus())) {
+            throw new IllegalArgumentException("新闻不存在或尚未发布");
+        }
+        return toVO(news);
+    }
+
+    // --- 新增：复用校验逻辑 ---
+    private News getReviewableNews(Long id) {
+        News news = newsMapper.selectById(id);
+        if (news == null) {
+            throw new IllegalArgumentException("新闻不存在");
+        }
+        if (!STATUS_PENDING_REVIEW.equals(news.getStatus())) {
+            throw new IllegalArgumentException("只有待审核的新闻可以审核");
+        }
+        return news;
     }
 }

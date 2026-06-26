@@ -3,10 +3,10 @@
     <!-- 横幅 -->
     <div id="top3">
       <img
-        src="https://www.guet.edu.cn/_upload/article/images/be/2d/7cfb63a54f26ac8315a7a1d0459b/e2290421-481e-4f2f-8d27-0839a4409a8b.jpg"
-        width="1000"
-        height="200"
-        alt="学院横幅"
+          src="https://www.guet.edu.cn/_upload/article/images/be/2d/7cfb63a54f26ac8315a7a1d0459b/e2290421-481e-4f2f-8d27-0839a4409a8b.jpg"
+          width="1000"
+          height="200"
+          alt="学院横幅"
       />
     </div>
 
@@ -42,19 +42,19 @@
             <div class="dtjt9_div_img">
               <router-link :to="sliderItems[currentIndex].link">
                 <img
-                  id="w5imgShow"
-                  name="w5imgShow"
-                  :src="sliderItems[currentIndex].img"
-                  :alt="sliderItems[currentIndex].title"
+                    id="w5imgShow"
+                    name="w5imgShow"
+                    :src="sliderItems[currentIndex].img"
+                    :alt="sliderItems[currentIndex].title"
                 />
               </router-link>
               <div id="w5imgNumber" class="number">
                 <a
-                  href="javascript:void(0)"
-                  v-for="(item, idx) in sliderItems"
-                  :key="item.id"
-                  :class="currentIndex === idx ? 'current' : 'nomal'"
-                  @mouseenter="setCurrentIndex(idx)"
+                    href="javascript:void(0)"
+                    v-for="(item, idx) in sliderItems"
+                    :key="item.id"
+                    :class="currentIndex === idx ? 'current' : 'nomal'"
+                    @mouseenter="setCurrentIndex(idx)"
                 >
                   {{ idx + 1 }}
                 </a>
@@ -162,7 +162,6 @@
         </div>
       </div>
 
-
       <!-- 友情链接区域 -->
       <div class="xiaonews5">
         <div class="tit">
@@ -174,16 +173,16 @@
               <div class="tempWrap">
                 <table>
                   <tbody>
-                    <tr>
-                      <template v-for="(link, index) in friendLinks" :key="link.name">
-                        <td class="hhh" v-if="index > 0">|</td>
-                        <td>
-                          <a class="c163284" :href="link.url" target="_blank">
-                            {{ link.name }}
-                          </a>
-                        </td>
-                      </template>
-                    </tr>
+                  <tr>
+                    <template v-for="(link, index) in friendLinks" :key="link.name">
+                      <td class="hhh" v-if="index > 0">|</td>
+                      <td>
+                        <a class="c163284" :href="link.url" target="_blank">
+                          {{ link.name }}
+                        </a>
+                      </td>
+                    </template>
+                  </tr>
                   </tbody>
                 </table>
               </div>
@@ -207,23 +206,23 @@ import {
 const newsList = ref<NewsData[]>([]);
 
 // 按 category 过滤，publishTime 格式化
-const fmt = (ts?: number) => ts ? new Date(ts).toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' }) : '';
+const fmt = (ts?: string) => ts ? new Date(ts).toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' }) : '';
 
-const collegeNews        = computed(() => newsList.value.filter(n => n.category === 1).slice(0, 10));
-const announcements      = computed(() => newsList.value.filter(n => n.category === 2).slice(0, 10));
-const academicActivities = computed(() => newsList.value.filter(n => n.category === 3).slice(0, 10));
-const studentNews        = computed(() => newsList.value.filter(n => n.category === 4).slice(0, 10));
-const partyWork          = computed(() => newsList.value.filter(n => n.category === 5).slice(0, 10));
+// 【重点修改】：栏目分类从原来的数字（1,2,3...）改为后端返回的中文字符串匹配
+const collegeNews        = computed(() => newsList.value.filter(n => n.category === '学院新闻').slice(0, 10));
+const announcements      = computed(() => newsList.value.filter(n => n.category === '通知公告').slice(0, 10));
+const academicActivities = computed(() => newsList.value.filter(n => n.category === '学术活动').slice(0, 10));
+const studentNews        = computed(() => newsList.value.filter(n => n.category === '学工新闻').slice(0, 10));
+const partyWork          = computed(() => newsList.value.filter(n => n.category === '党建工作').slice(0, 10));
 
 onMounted(async () => {
   try {
     const res: any = await getNews();
     console.log('新闻接口返回数据：', res);
-    // 后端返回 { code, data: [...] } 或直接 [...]
-    newsList.value = res?.data ?? res ?? [];
+    // 后端真正返回的数据在 res.data.records 里面
+    newsList.value = res?.data?.records ?? res ?? [];
   } catch (err) {
     console.error('获取新闻数据失败：', err);
-    // 接口失败时列表为空
   }
   startSlider();
 });
@@ -263,7 +262,6 @@ onBeforeUnmount(() => stopSlider());
   margin: 0 auto;
 }
 
-/* 内容展示区 */
 .content {
   display: flex;
   gap: 16px;
@@ -295,7 +293,7 @@ onBeforeUnmount(() => stopSlider());
 }
 
 .dynamic img {
-  margin-top: 30px; /* 居中微调 */
+  margin-top: 30px;
   margin-right: 5px;
 }
 
@@ -326,8 +324,8 @@ onBeforeUnmount(() => stopSlider());
   height: 28px;
 }
 .dynamic_list > li::before {
-  content: "▪";  
-  color: #434343; 
+  content: "▪";
+  color: #434343;
 }
 .dynamic_list a {
   display: block;
@@ -336,7 +334,7 @@ onBeforeUnmount(() => stopSlider());
   width: 230px;
   white-space: nowrap;
   overflow: hidden;
-  text-overflow: ellipsis; /* 显示省略号 */
+  text-overflow: ellipsis;
   margin-left: 6px;
 }
 
@@ -351,7 +349,6 @@ onBeforeUnmount(() => stopSlider());
   font-size: 16px;
 }
 
-/* 中间轮播图 */
 .informBox .informBoxM {
   position: relative;
   overflow: hidden;
@@ -379,7 +376,6 @@ onBeforeUnmount(() => stopSlider());
   bottom: 4px;
   display: flex;
   z-index: 10;
-  
 }
 
 #w5imgNumber a {
@@ -430,14 +426,12 @@ onBeforeUnmount(() => stopSlider());
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  
 }
 
 .dtjt9_div_text_title a:hover {
   color: #08599a;
 }
 
-/* 图片滚动 */
 .endContent {
   display: flex;
   flex-direction: column;
@@ -498,7 +492,6 @@ li .btt {
   margin-top: 5px;
 }
 
-/* 友情链接 */
 .xiaonews5 {
   margin-top: 20px;
   width: 1000px;
@@ -546,5 +539,4 @@ li .btt {
   color: #08599a;
   text-decoration: underline;
 }
-
 </style>

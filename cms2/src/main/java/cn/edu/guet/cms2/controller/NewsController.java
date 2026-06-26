@@ -1,5 +1,6 @@
 package cn.edu.guet.cms2.controller;
 
+import cn.edu.guet.cms2.annotation.RequiresPermission;
 import cn.edu.guet.cms2.dto.NewsCreateDTO;
 import cn.edu.guet.cms2.service.NewsService;
 import cn.edu.guet.cms2.util.PageRequest;
@@ -37,5 +38,41 @@ public class NewsController {
     public Result<Void> deleteNews(@PathVariable Long id) {
         newsService.deleteNews(id);
         return Result.success("新闻已删除");
+    }
+
+    // 注意：需要导入 import cn.edu.guet.cms2.annotation.RequiresPermission;
+
+    /**
+     * 审核通过
+     */
+    @RequiresPermission("content:news:audit")
+    @PutMapping("/{id}/approve")
+    public Result<NewsVO> approveNews(@PathVariable Long id) {
+        return Result.success("新闻审核已通过", newsService.approveNews(id));
+    }
+
+    /**
+     * 审核驳回
+     */
+    @RequiresPermission("content:news:audit")
+    @PutMapping("/{id}/reject")
+    public Result<NewsVO> rejectNews(@PathVariable Long id) {
+        return Result.success("新闻已驳回", newsService.rejectNews(id));
+    }
+
+    /**
+     * 首页公开列表（不校验登录）
+     */
+    @PostMapping("/public/page")
+    public Result<IPage<NewsVO>> getPublicNewsPage(@RequestBody(required = false) PageRequest pageRequest) {
+        return Result.success(newsService.getPublicNewsPage(pageRequest));
+    }
+
+    /**
+     * 首页公开详情（不校验登录）
+     */
+    @GetMapping("/public/{id}")
+    public Result<NewsVO> getPublicNewsDetail(@PathVariable Long id) {
+        return Result.success(newsService.getPublicNewsDetail(id));
     }
 }

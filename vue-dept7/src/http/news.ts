@@ -1,23 +1,36 @@
-import axios from "./axios";
+import axios from './axios'
 
-//后端数据库中新闻表的字段
+// 后端返回的新闻结构（与您 HomeView 的 NewsData 对应，类型稍微调整）
 export interface NewsData {
-  id?: number;
-  title?: string; //新闻标题
-  category?: number; //新闻栏目(1学院新闻，2通知公告，3学术活动，4学工新闻，5党建工作)
-  content?: string; //新闻内容
-  supplier?: string; //供稿人
-  reviewer?: string; //审稿人
-  status?: string; //新闻稿件状态
-  createTime?: number; //创建时间
-  publishTime?: number; //发布时间
-  updateTime?: number; //修改时间
+    id: string         // 注意：后端返回的是字符串（大整数转字符串）
+    title: string
+    category: string   // 后端返回中文，如 "学院新闻"
+    supplier?: string
+    reviewer?: string
+    content: string
+    status: string
+    publishTime?: string
+    createTime?: string
+    updateTime?: string
 }
 
-//获取新闻列表
-export const getNews = () => {
+// 获取首页新闻列表（POST /api/news/public/page）
+export const getNews = (currentPage = 1, pageSize = 10) => {
     return axios({
-        url: '/portal/news/getPublishedNews',
-        method: 'GET',
+        url: '/api/news/public/page',
+        method: 'POST',
+        data: {
+            currentPage,
+            pageSize,
+            params: [] // 默认不加筛选条件
+        }
     })
-};
+}
+
+// 获取单条新闻详情（可选，如果列表里已经有 content，详情页可以不调用这个，但留着备用）
+export const getNewsDetail = (id: string) => {
+    return axios({
+        url: `/api/news/public/${id}`,
+        method: 'GET'
+    })
+}

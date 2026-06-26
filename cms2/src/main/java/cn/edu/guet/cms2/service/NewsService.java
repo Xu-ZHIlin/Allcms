@@ -19,4 +19,14 @@ public interface NewsService {
 
     @Transactional(rollbackFor = Exception.class)
     void deleteNews(Long id);
+
+    // ------ 新增审核方法 ------
+    NewsVO approveNews(Long id);
+
+    NewsVO rejectNews(Long id);
+
+    // ------ 新增供首页使用的公开方法 ------
+    IPage<NewsVO> getPublicNewsPage(PageRequest pageRequest);
+
+    NewsVO getPublicNewsDetail(Long id);
 }
