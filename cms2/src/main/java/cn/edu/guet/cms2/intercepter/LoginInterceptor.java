@@ -28,6 +28,15 @@ public class LoginInterceptor implements HandlerInterceptor {
                              Object handler) throws Exception {
 
         log.info("----------------拦截器------------------");
+
+        // ========== 【核心修复点】 ==========
+        // 放行登录接口，不需要 Token 校验
+        String requestURI = request.getRequestURI();
+        if (requestURI.contains("/auth/login")) {
+            return true;
+        }
+        // ==================================
+
         // 1. 获取 Header 中的原始 Token 字符串
         String authHeader = request.getHeader("Authorization");
 
