@@ -46,10 +46,10 @@ onMounted(() => {
     <div class="aside-header">
       <div class="logo-area">
         <div class="logo">
-          <svg viewBox="0 0 32 32" width="28" height="28">
-            <rect x="2" y="2" width="28" height="28" rx="6" fill="#1677ff" />
-            <path d="M10 10h12v4H10zM10 18h8v4H10z" fill="#fff" opacity="0.9" />
-          </svg>
+<!--          <svg viewBox="0 0 32 32" width="28" height="28">-->
+<!--            <rect x="2" y="2" width="28" height="28" rx="6" fill="#1677ff" />-->
+<!--            <path d="M10 10h12v4H10zM10 18h8v4H10z" fill="#fff" opacity="0.9" />-->
+<!--          </svg>-->
           <span class="logo-text" v-show="!isCollapse">Admin</span>
         </div>
 
