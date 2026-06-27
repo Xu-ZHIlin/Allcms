@@ -10,6 +10,7 @@ import {
   getRolePermissionIds,
   updateRole
 } from '@/http/role.ts'
+import { useUserStore } from '@/stores/user'
 
 interface RoleItem {
   id: number
@@ -27,7 +28,10 @@ interface PermissionItem {
   children?: PermissionItem[]
 }
 
-// 表单校验规则（修复缺失roleRules）
+// 引入用户 Store 用于校验当前登录用户的权限
+const userStore = useUserStore()
+
+// 角色校验规则
 const roleRules: FormRules = {
   name: [
     { required: true, message: '请输入角色名称', trigger: 'blur' },
@@ -49,7 +53,6 @@ const pageSize = ref(10)
 const total = ref(0)
 const currentRole = ref<RoleItem | null>(null)
 const permissionTree = ref<PermissionItem[]>([])
-// 精准树形组件类型，替换any
 const permissionTreeRef = ref<ElTreeInstance | null>(null)
 const queryForm = reactive({
   roleName: '',
@@ -67,6 +70,16 @@ const permissionTypeTagMap = {
 }
 
 const normalizeMenuType = (menuType?: string) => (menuType || '').toUpperCase()
+
+// 【核心逻辑】检查当前登录用户是否具备特定权限码
+const hasPermission = (permCode: string) => {
+  if (!userStore.userInfo || !userStore.userInfo.permissionList) {
+    return false
+  }
+  return userStore.userInfo.permissionList.some(
+      (p: any) => p.code === permCode
+  )
+}
 
 // 加载角色分页列表
 const getRoleData = async () => {
@@ -167,7 +180,6 @@ const handleAuthorize = async (role: RoleItem) => {
   currentRole.value = role
   authorizeDialogVisible.value = true
 
-  // 仅第一次加载权限树
   if (permissionTree.value.length === 0) {
     try {
       const treeResult = await getPermissionTree()
@@ -189,7 +201,6 @@ const handleAuthorize = async (role: RoleItem) => {
   }
 
   await nextTick()
-  // 批量赋值，替代循环setChecked，优化性能
   permissionTreeRef.value?.setCheckedKeys(permissionIds)
 }
 
@@ -203,7 +214,6 @@ const handleSaveAuthorize = async () => {
     const halfCheckedKeys = permissionTreeRef.value.getHalfCheckedKeys() || []
     const selectedPermissionIds = [...new Set([...checkedKeys, ...halfCheckedKeys])].map(Number)
 
-    // 校验：不能不分配任何权限
     if (selectedPermissionIds.length === 0) {
       ElMessage.warning('至少需要分配一项权限')
       authorizing.value = false
@@ -223,10 +233,15 @@ const handleSaveAuthorize = async () => {
   }
 }
 
-// 关闭授权弹窗重置状态
-const handleAuthorizeDialogClosed = () => {
-  permissionTreeRef.value?.setCheckedKeys([])
-  permissionTreeRef.value?.setExpandedKeys([])
+// 关闭授权弹窗，清除回显状态
+const handleAuthorizeDialogClosed = async () => {
+  await nextTick()
+  if (permissionTreeRef.value && typeof permissionTreeRef.value.setCheckedKeys === 'function') {
+    permissionTreeRef.value.setCheckedKeys([])
+  }
+  if (permissionTreeRef.value && typeof permissionTreeRef.value.setExpandedKeys === 'function') {
+    permissionTreeRef.value.setExpandedKeys([])
+  }
   currentRole.value = null
 }
 
@@ -263,15 +278,64 @@ onMounted(() => {
         </el-form-item>
       </el-form>
 
-      <!-- 移除写死height="100%"，适配弹性布局 -->
       <el-table v-loading="tableLoading" :data="roleList" border>
         <el-table-column prop="id" label="角色ID" width="120" />
         <el-table-column prop="name" label="角色名称" min-width="220" show-overflow-tooltip />
-        <el-table-column label="操作" width="260" fixed="right">
+        <el-table-column label="操作" width="280" fixed="right">
           <template #default="{ row }">
-            <el-button type="primary" size="small" @click="openRoleDialog(row)">编辑</el-button>
-            <el-button type="success" size="small" @click="handleAuthorize(row)">授权</el-button>
-            <el-button type="danger" size="small" @click="handleDelete(row)">删除</el-button>
+            <!-- 编辑按钮：动态权限 role:edit -->
+            <el-tooltip
+                content="您没有编辑角色的操作权限"
+                placement="top"
+                :disabled="hasPermission('role:edit')"
+            >
+              <span>
+                <el-button
+                    type="primary"
+                    size="small"
+                    @click="openRoleDialog(row)"
+                    :disabled="!hasPermission('role:edit')"
+                >
+                  编辑
+                </el-button>
+              </span>
+            </el-tooltip>
+
+            <!-- 授权按钮：动态权限 role:assign-permission -->
+            <el-tooltip
+                content="您没有分配权限的操作权限"
+                placement="top"
+                :disabled="hasPermission('role:assign-permission')"
+            >
+              <span>
+                <el-button
+                    type="success"
+                    size="small"
+                    @click="handleAuthorize(row)"
+                    :disabled="!hasPermission('role:assign-permission')"
+                >
+                  授权
+                </el-button>
+              </span>
+            </el-tooltip>
+
+            <!-- 删除按钮：动态权限 role:delete -->
+            <el-tooltip
+                content="您没有删除角色的操作权限"
+                placement="top"
+                :disabled="hasPermission('role:delete')"
+            >
+              <span>
+                <el-button
+                    type="danger"
+                    size="small"
+                    @click="handleDelete(row)"
+                    :disabled="!hasPermission('role:delete')"
+                >
+                  删除
+                </el-button>
+              </span>
+            </el-tooltip>
           </template>
         </el-table-column>
       </el-table>
@@ -330,6 +394,7 @@ onMounted(() => {
           show-checkbox
           default-expand-all
           :check-on-click-node="true"
+          :check-strictly="true"
       >
         <template #default="{ node, data }">
           <div class="permission-tree-node">

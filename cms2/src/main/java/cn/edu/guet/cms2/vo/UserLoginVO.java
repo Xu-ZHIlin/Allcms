@@ -11,7 +11,7 @@ import java.util.stream.Collectors;
 //Set是不可重复的
 @Data
 public class UserLoginVO {
-    private Integer id;
+    private Long id;
     private String username;
     // 返回给前端，token要存储起来，每次访问后端某个接口的时候，要携带上token
     private String token;

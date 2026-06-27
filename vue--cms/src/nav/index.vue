@@ -4,9 +4,7 @@ import Main from "@/nav/components/main.vue";
 
 <template>
   <div class="index">
-    <Top></Top>
     <Main></Main>
-    <Footer></Footer>
   </div>
 
 </template>

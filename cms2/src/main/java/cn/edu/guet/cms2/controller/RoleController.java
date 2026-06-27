@@ -1,5 +1,6 @@
 package cn.edu.guet.cms2.controller;
 
+import cn.edu.guet.cms2.annotation.RequiresPermission;
 import cn.edu.guet.cms2.dto.RoleAuthorizeDTO;
 import cn.edu.guet.cms2.dto.RoleDTO;
 import cn.edu.guet.cms2.entity.Permission;
@@ -52,6 +53,7 @@ public class RoleController {
         return Result.success(roleService.getRolePermissionIds(roleId));
     }
 
+    @RequiresPermission("role:assign-permission")
     @PostMapping("/authorize")
     public Result<String> authorizeRole(@RequestBody RoleAuthorizeDTO roleAuthorizeDTO) {
         roleService.authorizeRole(roleAuthorizeDTO);

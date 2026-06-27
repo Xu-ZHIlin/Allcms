@@ -57,7 +57,7 @@ public class LoginServiceImpl implements LoginService {
  * 颁发 Token 并处理 Redis 存储（方案2：单点登录）
  */
 private void issueToken(UserLoginVO loginVO) {
-    Integer userId = loginVO.getId();
+    Long userId = loginVO.getId();
     String userUidKey = "login:uid:" + userId;
 
     // === 1. 单点登录逻辑：检查并踢出旧 Token ===
