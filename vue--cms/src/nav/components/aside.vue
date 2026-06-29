@@ -42,7 +42,6 @@ onMounted(() => {
 
 <template>
   <aside class="aside">
-    <!-- 头部：Logo + 折叠按钮 -->
     <div class="aside-header">
       <div class="logo-area">
         <div class="logo">
@@ -105,7 +104,7 @@ onMounted(() => {
     <div class="logout-wrapper">
       <div class="logout-btn" @click="handleLogout">
         <el-icon :size="18"><SwitchButton /></el-icon>
-        <span v-show="!isCollapse">退出登录</span>
+        <span v-show="!isCollapse">退出登录123</span>
       </div>
     </div>
   </aside>
