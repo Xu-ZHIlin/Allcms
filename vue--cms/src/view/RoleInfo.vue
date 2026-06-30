@@ -22,7 +22,7 @@ const currentRole = ref<RoleItem | null>(null)
 const permissionTree = ref<any[]>([])
 const queryForm = reactive({ roleName: '' })
 
-// 原生树形结构状态
+// 树结构共享状态
 const checkedPermissionIds = ref<number[]>([])
 const expandedNodes = ref<Set<number>>(new Set())
 
@@ -66,32 +66,17 @@ const handleDelete = async (row: RoleItem) => {
   await getRoleData()
 }
 
-// 原生树形控制
+// 1. 切换折叠状态
 const toggleExpand = (id: number) => {
   if (expandedNodes.value.has(id)) expandedNodes.value.delete(id)
   else expandedNodes.value.add(id)
 }
 
+// 2. 切换复选框状态
 const toggleCheckNode = (id: number) => {
   const idx = checkedPermissionIds.value.indexOf(id)
   if (idx > -1) checkedPermissionIds.value.splice(idx, 1)
   else checkedPermissionIds.value.push(id)
-}
-
-const renderTree = (nodes: any[]) => {
-  return nodes.map(node => (
-      <li key={node.id}>
-      <div class="tree-node">
-      <span class="tree-toggle" onClick={() => toggleExpand(node.id)}>{node.children?.length ? '[-]' : ''}</span>
-  <input type="checkbox" checked={checkedPermissionIds.value.includes(node.id)} onChange={() => toggleCheckNode(node.id)} />
-  <span class="tree-label">{node.name}</span>
-      <span class="tree-type">[{node.menuType}]</span>
-      </div>
-  {node.children?.length > 0 && expandedNodes.value.has(node.id) && (
-      <ul class="tree-children">{renderTree(node.children)}</ul>
-  )}
-  </li>
-))
 }
 
 const handleAuthorize = async (role: RoleItem) => {
@@ -113,6 +98,44 @@ const handleSaveAuthorize = async () => {
 }
 
 onMounted(() => { getRoleData() })
+</script>
+
+<!-- 3. 用于递归渲染的原生 HTML 树组件（使用了独立的 script 标签） -->
+<script lang="ts">
+import { defineComponent, PropType } from 'vue'
+export default defineComponent({
+  name: 'TreeItem',
+  props: {
+    node: { type: Object as PropType<any>, required: true },
+    checkedIds: { type: Array as PropType<number[]>, required: true },
+    expandedIds: { type: Object as PropType<Set<number>>, required: true },
+    toggleExpand: { type: Function as PropType<(id: number) => void>, required: true },
+    toggleCheck: { type: Function as PropType<(id: number) => void>, required: true }
+  },
+  template: `
+    <li>
+      <div class="tree-node">
+        <span class="tree-toggle" @click="toggleExpand(node.id)">
+          {{ node.children?.length ? (expandedIds.has(node.id) ? '[-]' : '[+]') : '' }}
+        </span>
+        <input type="checkbox" :checked="checkedIds.includes(node.id)" @change="toggleCheck(node.id)" />
+        <span class="tree-label">{{ node.name }}</span>
+        <span class="tree-type">[{{ node.menuType }}]</span>
+      </div>
+      <ul class="tree-children" v-if="node.children?.length && expandedIds.has(node.id)">
+        <TreeItem
+            v-for="child in node.children"
+            :key="child.id"
+            :node="child"
+            :checkedIds="checkedIds"
+            :expandedIds="expandedIds"
+            :toggleExpand="toggleExpand"
+            :toggleCheck="toggleCheck"
+        />
+      </ul>
+    </li>
+  `
+})
 </script>
 
 <template>
@@ -156,43 +179,21 @@ onMounted(() => { getRoleData() })
       </div>
     </div>
 
-    <!-- 原生弹窗(授权) -->
+    <!-- 原生弹窗(授权) - 使用递归 TreeItem 组件 -->
     <div class="modal-overlay" v-if="authorizeDialogVisible">
       <div class="modal-box" style="width:600px;">
         <div class="modal-header"><h3>角色授权 - {{ currentRole?.name }}</h3><span class="close" @click="authorizeDialogVisible=false">×</span></div>
         <div class="modal-body" style="max-height:400px; overflow-y:auto;">
           <ul class="tree-container">
-            <template v-for="node in permissionTree" :key="node.id">
-              <li>
-                <div class="tree-node">
-                  <span class="tree-toggle" @click="toggleExpand(node.id)">{{ node.children?.length ? (expandedNodes.has(node.id) ? '[-]' : '[+]') : '' }}</span>
-                  <input type="checkbox" :checked="checkedPermissionIds.includes(node.id)" @change="toggleCheckNode(node.id)" />
-                  <span class="tree-label">{{ node.name }}</span>
-                  <span class="tree-type">[{{ node.menuType }}]</span>
-                </div>
-                <ul class="tree-children" v-if="node.children?.length && expandedNodes.has(node.id)">
-                  <template v-for="child in node.children" :key="child.id">
-                    <li>
-                      <div class="tree-node">
-                        <span class="tree-toggle" @click="toggleExpand(child.id)">{{ child.children?.length ? (expandedNodes.has(child.id) ? '[-]' : '[+]') : '' }}</span>
-                        <input type="checkbox" :checked="checkedPermissionIds.includes(child.id)" @change="toggleCheckNode(child.id)" />
-                        <span class="tree-label">{{ child.name }}</span>
-                        <span class="tree-type">[{{ child.menuType }}]</span>
-                      </div>
-                      <ul class="tree-children" v-if="child.children?.length && expandedNodes.has(child.id)">
-                        <li v-for="sub in child.children" :key="sub.id">
-                          <div class="tree-node" style="padding-left:20px;">
-                            <input type="checkbox" :checked="checkedPermissionIds.includes(sub.id)" @change="toggleCheckNode(sub.id)" />
-                            <span class="tree-label">{{ sub.name }}</span>
-                            <span class="tree-type">[{{ sub.menuType }}]</span>
-                          </div>
-                        </li>
-                      </ul>
-                    </li>
-                  </template>
-                </ul>
-              </li>
-            </template>
+            <TreeItem
+                v-for="node in permissionTree"
+                :key="node.id"
+                :node="node"
+                :checkedIds="checkedPermissionIds"
+                :expandedIds="expandedNodes"
+                :toggleExpand="toggleExpand"
+                :toggleCheck="toggleCheckNode"
+            />
           </ul>
         </div>
         <div class="modal-footer"><button @click="authorizeDialogVisible=false">取消</button><button class="btn-primary" @click="handleSaveAuthorize">确定</button></div>

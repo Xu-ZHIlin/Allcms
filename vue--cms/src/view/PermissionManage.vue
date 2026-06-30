@@ -110,6 +110,8 @@ onMounted(() => { getPermissions(); getPermissionTreeData() })
       </div>
     </div>
   </div>
+
+
 </template>
 
 <style scoped>
