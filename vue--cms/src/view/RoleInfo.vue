@@ -1,235 +1,479 @@
 <script lang="ts" setup>
 import { nextTick, onMounted, reactive, ref } from 'vue'
+import { ElMessage, ElMessageBox, type FormInstance, type FormRules, type ElTreeInstance } from 'element-plus'
 import {
-  authorizeRole, createRole, deleteRole, getPermissionTree, getRoleInfoPage, getRolePermissionIds, updateRole
+  authorizeRole,
+  createRole,
+  deleteRole,
+  getPermissionTree,
+  getRoleInfoPage,
+  getRolePermissionIds,
+  updateRole
 } from '@/http/role.ts'
 import { useUserStore } from '@/stores/user'
 
-interface RoleItem { id: number; name: string }
-interface RoleForm { name: string }
+interface RoleItem {
+  id: number
+  name: string
+}
+
+interface RoleForm {
+  name: string
+}
+
+interface PermissionItem {
+  id: number
+  name: string
+  menuType: string
+  children?: PermissionItem[]
+}
+
+// 引入用户 Store 用于校验当前登录用户的权限
 const userStore = useUserStore()
 
-const roleFormRef = ref()
+// 角色校验规则
+const roleRules: FormRules = {
+  name: [
+    { required: true, message: '请输入角色名称', trigger: 'blur' },
+    { min: 2, max: 50, message: '长度在 2 到 50 个字符', trigger: 'blur' }
+  ]
+}
+
+const roleFormRef = ref<FormInstance>()
 const roleForm = ref<RoleForm>({ name: '' })
 const editingId = ref<number | null>(null)
 const roleDialogVisible = ref(false)
 const authorizeDialogVisible = ref(false)
-const submitting = ref(false); const authorizing = ref(false)
+const submitting = ref(false)
+const authorizing = ref(false)
 const tableLoading = ref(false)
 const roleList = ref<RoleItem[]>([])
-const currentPage = ref(1); const pageSize = ref(10); const total = ref(0)
+const currentPage = ref(1)
+const pageSize = ref(10)
+const total = ref(0)
 const currentRole = ref<RoleItem | null>(null)
-const permissionTree = ref<any[]>([])
-const queryForm = reactive({ roleName: '' })
+const permissionTree = ref<PermissionItem[]>([])
+const permissionTreeRef = ref<ElTreeInstance | null>(null)
+const queryForm = reactive({
+  roleName: '',
+})
 
-// 树结构共享状态
-const checkedPermissionIds = ref<number[]>([])
-const expandedNodes = ref<Set<number>>(new Set())
-
-const hasPermission = (permCode: string) => {
-  if (!userStore.userInfo || !userStore.userInfo.permissionList) return false
-  return userStore.userInfo.permissionList.some((p: any) => p.code === permCode)
+const permissionTreeProps = {
+  label: 'name',
+  children: 'children',
 }
 
+const permissionTypeTagMap = {
+  DIRECTORY: 'primary',
+  MENU: 'success',
+  BUTTON: 'warning',
+}
+
+const normalizeMenuType = (menuType?: string) => (menuType || '').toUpperCase()
+
+// 【核心逻辑】检查当前登录用户是否具备特定权限码
+const hasPermission = (permCode: string) => {
+  if (!userStore.userInfo || !userStore.userInfo.permissionList) {
+    return false
+  }
+  return userStore.userInfo.permissionList.some(
+      (p: any) => p.code === permCode
+  )
+}
+
+// 加载角色分页列表
 const getRoleData = async () => {
   tableLoading.value = true
-  const result = await getRoleInfoPage({ currentPage: currentPage.value, pageSize: pageSize.value, roleName: queryForm.roleName })
-  roleList.value = result.data?.records || []
-  total.value = Number(result.data?.total || 0)
-  tableLoading.value = false
+  try {
+    const result = await getRoleInfoPage({
+      currentPage: currentPage.value,
+      pageSize: pageSize.value,
+      roleName: queryForm.roleName
+    })
+    roleList.value = result.data?.records || []
+    total.value = Number(result.data?.total || 0)
+  } catch (err) {
+    ElMessage.error('获取角色列表失败')
+  } finally {
+    tableLoading.value = false
+  }
 }
 
-const handleSearch = () => { currentPage.value = 1; getRoleData() }
-const resetSearch = () => { queryForm.roleName = ''; handleSearch() }
+// 分页-每页条数改变
+const handleSizeChange = () => {
+  currentPage.value = 1
+  getRoleData()
+}
 
+// 分页-页码切换
+const handleCurrentChange = () => {
+  getRoleData()
+}
+
+// 查询
+let searchTimer: number | null = null
+const handleSearch = () => {
+  if (searchTimer) clearTimeout(searchTimer)
+  searchTimer = window.setTimeout(() => {
+    currentPage.value = 1
+    getRoleData()
+  }, 300)
+}
+
+// 重置搜索
+const resetSearch = () => {
+  queryForm.roleName = ''
+  currentPage.value = 1
+  getRoleData()
+}
+
+// 打开新增/编辑弹窗
 const openRoleDialog = (row?: RoleItem) => {
   editingId.value = row?.id || null
   roleForm.value = row ? { name: row.name } : { name: '' }
+  roleFormRef.value?.clearValidate()
   roleDialogVisible.value = true
 }
 
+// 提交角色新增/编辑
 const submitRole = async () => {
-  if (!roleForm.value.name) { alert('请输入角色名称'); return }
+  if (!roleFormRef.value) return
+
+  const valid = await roleFormRef.value.validate().catch(() => false)
+  if (!valid) return
+
   submitting.value = true
-  if (editingId.value) await updateRole(editingId.value, roleForm.value)
-  else await createRole(roleForm.value)
-  alert(editingId.value ? '角色已更新' : '角色已新增')
-  roleDialogVisible.value = false
-  await getRoleData()
-  submitting.value = false
+  try {
+    const payload = { name: roleForm.value.name }
+    const result = editingId.value
+        ? await updateRole(editingId.value, payload)
+        : await createRole(payload)
+
+    ElMessage.success(result.message || (editingId.value ? '角色已更新' : '角色已新增'))
+    roleDialogVisible.value = false
+    await getRoleData()
+  } catch (err) {
+    ElMessage.error('保存角色失败')
+  } finally {
+    submitting.value = false
+  }
 }
 
+// 删除角色
 const handleDelete = async (row: RoleItem) => {
-  if (!confirm(`确认删除角色“${row.name}”吗？`)) return
-  await deleteRole(row.id)
-  alert('角色已删除')
-  await getRoleData()
+  try {
+    await ElMessageBox.confirm(`确认删除角色“${row.name}”吗？`, '删除确认', {
+      confirmButtonText: '删除',
+      cancelButtonText: '取消',
+      type: 'warning',
+    })
+    await deleteRole(row.id)
+    ElMessage.success('角色已删除')
+    await getRoleData()
+  } catch (err: any) {
+    if (err !== 'cancel') ElMessage.error('删除角色失败')
+  }
 }
 
-// 1. 切换折叠状态
-const toggleExpand = (id: number) => {
-  if (expandedNodes.value.has(id)) expandedNodes.value.delete(id)
-  else expandedNodes.value.add(id)
-}
-
-// 2. 切换复选框状态
-const toggleCheckNode = (id: number) => {
-  const idx = checkedPermissionIds.value.indexOf(id)
-  if (idx > -1) checkedPermissionIds.value.splice(idx, 1)
-  else checkedPermissionIds.value.push(id)
-}
-
+// 打开授权弹窗，回显权限
 const handleAuthorize = async (role: RoleItem) => {
   currentRole.value = role
   authorizeDialogVisible.value = true
-  const treeResult = await getPermissionTree()
-  permissionTree.value = treeResult.data || []
-  const permRes = await getRolePermissionIds(role.id)
-  checkedPermissionIds.value = permRes.data || []
+
+  if (permissionTree.value.length === 0) {
+    try {
+      const treeResult = await getPermissionTree()
+      permissionTree.value = treeResult.data || []
+    } catch (err) {
+      ElMessage.error('加载权限树失败')
+      authorizeDialogVisible.value = false
+      return
+    }
+  }
+
+  let permissionIds: number[] = []
+  try {
+    const result = await getRolePermissionIds(role.id)
+    permissionIds = result.data || []
+  } catch (err) {
+    ElMessage.error('获取角色权限失败')
+    return
+  }
+
+  await nextTick()
+  permissionTreeRef.value?.setCheckedKeys(permissionIds)
 }
 
+// 保存角色权限授权
 const handleSaveAuthorize = async () => {
-  if (checkedPermissionIds.value.length === 0) { alert('至少需要分配一项权限'); return }
+  if (!currentRole.value || !permissionTreeRef.value) return
   authorizing.value = true
-  await authorizeRole({ roleId: currentRole.value!.id, permissionIds: checkedPermissionIds.value })
-  alert('授权保存成功')
-  authorizeDialogVisible.value = false
-  authorizing.value = false
+
+  try {
+    const checkedKeys = permissionTreeRef.value.getCheckedKeys(false) || []
+    const halfCheckedKeys = permissionTreeRef.value.getHalfCheckedKeys() || []
+    const selectedPermissionIds = [...new Set([...checkedKeys, ...halfCheckedKeys])].map(Number)
+
+    if (selectedPermissionIds.length === 0) {
+      ElMessage.warning('至少需要分配一项权限')
+      authorizing.value = false
+      return
+    }
+
+    await authorizeRole({
+      roleId: currentRole.value.id,
+      permissionIds: selectedPermissionIds,
+    })
+    ElMessage.success('授权保存成功')
+    authorizeDialogVisible.value = false
+  } catch (err) {
+    ElMessage.error('权限授权失败')
+  } finally {
+    authorizing.value = false
+  }
 }
 
-onMounted(() => { getRoleData() })
-</script>
+// 关闭授权弹窗，清除回显状态
+const handleAuthorizeDialogClosed = async () => {
+  await nextTick()
+  if (permissionTreeRef.value && typeof permissionTreeRef.value.setCheckedKeys === 'function') {
+    permissionTreeRef.value.setCheckedKeys([])
+  }
+  if (permissionTreeRef.value && typeof permissionTreeRef.value.setExpandedKeys === 'function') {
+    permissionTreeRef.value.setExpandedKeys([])
+  }
+  currentRole.value = null
+}
 
-<!-- 3. 用于递归渲染的原生 HTML 树组件（使用了独立的 script 标签） -->
-<script lang="ts">
-import { defineComponent, PropType } from 'vue'
-export default defineComponent({
-  name: 'TreeItem',
-  props: {
-    node: { type: Object as PropType<any>, required: true },
-    checkedIds: { type: Array as PropType<number[]>, required: true },
-    expandedIds: { type: Object as PropType<Set<number>>, required: true },
-    toggleExpand: { type: Function as PropType<(id: number) => void>, required: true },
-    toggleCheck: { type: Function as PropType<(id: number) => void>, required: true }
-  },
-  template: `
-    <li>
-      <div class="tree-node">
-        <span class="tree-toggle" @click="toggleExpand(node.id)">
-          {{ node.children?.length ? (expandedIds.has(node.id) ? '[-]' : '[+]') : '' }}
-        </span>
-        <input type="checkbox" :checked="checkedIds.includes(node.id)" @change="toggleCheck(node.id)" />
-        <span class="tree-label">{{ node.name }}</span>
-        <span class="tree-type">[{{ node.menuType }}]</span>
-      </div>
-      <ul class="tree-children" v-if="node.children?.length && expandedIds.has(node.id)">
-        <TreeItem
-            v-for="child in node.children"
-            :key="child.id"
-            :node="child"
-            :checkedIds="checkedIds"
-            :expandedIds="expandedIds"
-            :toggleExpand="toggleExpand"
-            :toggleCheck="toggleCheck"
-        />
-      </ul>
-    </li>
-  `
+// 页面初始化加载列表
+onMounted(() => {
+  getRoleData()
 })
 </script>
 
 <template>
-  <div class="layout-container">
-    <div class="toolbar"><div><h2>角色管理</h2><p>维护角色并分配菜单和按钮权限。</p></div><button class="btn-primary" @click="openRoleDialog()">新增角色</button></div>
-    <div class="search-panel">
-      <input type="text" v-model="queryForm.roleName" placeholder="请输入角色名称" />
-      <button class="btn-primary" @click="handleSearch">查询</button>
-      <button @click="resetSearch">重置</button>
-    </div>
-    <table border="1" class="raw-table">
-      <thead><tr><th>ID</th><th>角色名称</th><th>操作</th></tr></thead>
-      <tbody>
-      <tr v-if="tableLoading"><td colspan="3" style="text-align:center;">加载中...</td></tr>
-      <tr v-else-if="roleList.length === 0"><td colspan="3" style="text-align:center;">暂无数据</td></tr>
-      <tr v-for="row in roleList" :key="row.id">
-        <td>{{ row.id }}</td>
-        <td>{{ row.name }}</td>
-        <td>
-          <button class="btn-xs btn-primary" :disabled="!hasPermission('role:edit')" @click="openRoleDialog(row)">编辑</button>
-          <button class="btn-xs btn-success" :disabled="!hasPermission('role:assign-permission')" @click="handleAuthorize(row)">授权</button>
-          <button class="btn-xs btn-danger" :disabled="!hasPermission('role:delete')" @click="handleDelete(row)">删除</button>
-        </td>
-      </tr>
-      </tbody>
-    </table>
-    <div class="pagination">
-      <span>共 {{ total }} 条</span>
-      <select v-model="pageSize"><option :value="10">10</option><option :value="20">20</option><option :value="50">50</option></select>
-      <button @click="currentPage > 1 && (currentPage--, getRoleData())">上一页</button>
-      <span>第 <input type="number" v-model="currentPage" style="width:40px;text-align:center;" @change="getRoleData"/> 页</span>
-      <button @click="currentPage < Math.ceil(total/pageSize) && (currentPage++, getRoleData())">下一页</button>
-    </div>
-
-    <!-- 原生弹窗(新增/编辑) -->
-    <div class="modal-overlay" v-if="roleDialogVisible">
-      <div class="modal-box" style="width:440px;">
-        <div class="modal-header"><h3>{{ editingId ? '编辑角色' : '新增角色' }}</h3><span class="close" @click="roleDialogVisible=false">×</span></div>
-        <div class="modal-body"><div class="form-group"><label>角色名称</label><input type="text" v-model="roleForm.name" /></div></div>
-        <div class="modal-footer"><button @click="roleDialogVisible=false">取消</button><button class="btn-primary" @click="submitRole">{{ editingId ? '保存修改' : '新增角色' }}</button></div>
+  <div class="role-page">
+    <div class="page-toolbar">
+      <div>
+        <h2>角色管理</h2>
+        <p>维护系统角色，并给角色分配菜单和按钮权限。</p>
       </div>
+      <el-button type="primary" @click="openRoleDialog()">新增角色</el-button>
     </div>
 
-    <!-- 原生弹窗(授权) - 使用递归 TreeItem 组件 -->
-    <div class="modal-overlay" v-if="authorizeDialogVisible">
-      <div class="modal-box" style="width:600px;">
-        <div class="modal-header"><h3>角色授权 - {{ currentRole?.name }}</h3><span class="close" @click="authorizeDialogVisible=false">×</span></div>
-        <div class="modal-body" style="max-height:400px; overflow-y:auto;">
-          <ul class="tree-container">
-            <TreeItem
-                v-for="node in permissionTree"
-                :key="node.id"
-                :node="node"
-                :checkedIds="checkedPermissionIds"
-                :expandedIds="expandedNodes"
-                :toggleExpand="toggleExpand"
-                :toggleCheck="toggleCheckNode"
-            />
-          </ul>
-        </div>
-        <div class="modal-footer"><button @click="authorizeDialogVisible=false">取消</button><button class="btn-primary" @click="handleSaveAuthorize">确定</button></div>
+    <div class="list-panel">
+      <el-form :model="queryForm" inline class="query-form">
+        <el-form-item label="角色名称">
+          <el-input
+              v-model="queryForm.roleName"
+              clearable
+              placeholder="请输入角色名称"
+              @clear="handleSearch"
+              @keyup.enter="handleSearch"
+          />
+        </el-form-item>
+        <el-form-item>
+          <el-button type="primary" @click="handleSearch">查询</el-button>
+          <el-button @click="resetSearch">重置</el-button>
+        </el-form-item>
+      </el-form>
+
+      <el-table v-loading="tableLoading" :data="roleList" border>
+        <el-table-column prop="id" label="角色ID" width="120" />
+        <el-table-column prop="name" label="角色名称" min-width="220" show-overflow-tooltip />
+        <el-table-column label="操作" width="280" fixed="right">
+          <template #default="{ row }">
+            <!-- 编辑按钮：动态权限 role:edit -->
+            <el-tooltip
+                content="您没有编辑角色的操作权限"
+                placement="top"
+                :disabled="hasPermission('role:edit')"
+            >
+              <span>
+                <el-button
+                    type="primary"
+                    size="small"
+                    @click="openRoleDialog(row)"
+                    :disabled="!hasPermission('role:edit')"
+                >
+                  编辑
+                </el-button>
+              </span>
+            </el-tooltip>
+
+            <!-- 授权按钮：动态权限 role:assign-permission -->
+            <el-tooltip
+                content="您没有分配权限的操作权限"
+                placement="top"
+                :disabled="hasPermission('role:assign-permission')"
+            >
+              <span>
+                <el-button
+                    type="success"
+                    size="small"
+                    @click="handleAuthorize(row)"
+                    :disabled="!hasPermission('role:assign-permission')"
+                >
+                  授权
+                </el-button>
+              </span>
+            </el-tooltip>
+
+            <!-- 删除按钮：动态权限 role:delete -->
+            <el-tooltip
+                content="您没有删除角色的操作权限"
+                placement="top"
+                :disabled="hasPermission('role:delete')"
+            >
+              <span>
+                <el-button
+                    type="danger"
+                    size="small"
+                    @click="handleDelete(row)"
+                    :disabled="!hasPermission('role:delete')"
+                >
+                  删除
+                </el-button>
+              </span>
+            </el-tooltip>
+          </template>
+        </el-table-column>
+      </el-table>
+
+      <div class="pagination-wrapper">
+        <el-pagination
+            v-model:current-page="currentPage"
+            v-model:page-size="pageSize"
+            :page-sizes="[10, 20, 50]"
+            :total="total"
+            layout="total, sizes, prev, pager, next, jumper"
+            @size-change="handleSizeChange"
+            @current-change="handleCurrentChange"
+        />
       </div>
     </div>
   </div>
+
+  <!-- 新增/编辑角色弹窗 -->
+  <el-dialog
+      v-model="roleDialogVisible"
+      :title="editingId ? '编辑角色' : '新增角色'"
+      width="460px"
+      destroy-on-close
+      align-center
+  >
+    <el-form ref="roleFormRef" :model="roleForm" :rules="roleRules" label-width="88px">
+      <el-form-item label="角色名称" prop="name">
+        <el-input v-model="roleForm.name" maxlength="50" placeholder="请输入角色名称" />
+      </el-form-item>
+    </el-form>
+
+    <template #footer>
+      <el-button @click="roleDialogVisible = false">取消</el-button>
+      <el-button type="primary" :loading="submitting" @click="submitRole">
+        {{ editingId ? '保存修改' : '新增角色' }}
+      </el-button>
+    </template>
+  </el-dialog>
+
+  <!-- 角色授权弹窗 -->
+  <el-dialog
+      v-model="authorizeDialogVisible"
+      :title="`角色授权${currentRole ? ` - ${currentRole.name}` : ''}`"
+      width="640px"
+      destroy-on-close
+      align-center
+      @closed="handleAuthorizeDialogClosed"
+  >
+    <div class="permission-tree-wrapper">
+      <el-tree
+          ref="permissionTreeRef"
+          :data="permissionTree"
+          :props="permissionTreeProps"
+          node-key="id"
+          show-checkbox
+          default-expand-all
+          :check-on-click-node="true"
+          :check-strictly="true"
+      >
+        <template #default="{ node, data }">
+          <div class="permission-tree-node">
+            <span>{{ node.label }}</span>
+            <el-tag
+                class="permission-type-tag"
+                size="small"
+                :type="permissionTypeTagMap[normalizeMenuType(data.menuType)] || 'info'"
+            >
+              {{ normalizeMenuType(data.menuType) }}
+            </el-tag>
+          </div>
+        </template>
+      </el-tree>
+    </div>
+
+    <template #footer>
+      <el-button @click="authorizeDialogVisible = false">取消</el-button>
+      <el-button type="primary" :loading="authorizing" @click="handleSaveAuthorize">确定</el-button>
+    </template>
+  </el-dialog>
 </template>
 
 <style scoped>
-.layout-container { padding: 15px; background: #f5f7fa; font-family: sans-serif; }
-.toolbar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
-.search-panel { padding: 10px; background: #fff; border: 1px solid #ccc; margin-bottom: 12px; display: flex; gap: 8px; }
-.search-panel input { border: 1px solid #ccc; padding: 4px 8px; }
-.raw-table { width: 100%; border-collapse: collapse; background: #fff; font-size: 13px; }
-.raw-table th, .raw-table td { border: 1px solid #ccc; padding: 6px 10px; text-align: left; }
-.raw-table th { background: #eee; font-weight: bold; }
-.btn-primary { background: #0056b3; color: #fff; border: 1px solid #0056b3; padding: 4px 10px; cursor: pointer; }
-.btn-success { background: #2e7d32; color: #fff; border: 1px solid #2e7d32; }
-.btn-danger { background: #d32f2f; color: #fff; border: 1px solid #d32f2f; }
-.btn-xs { padding: 2px 6px; font-size: 12px; border: 1px solid transparent; cursor: pointer; }
-.pagination { display: flex; align-items: center; gap: 10px; margin-top: 12px; font-size: 13px; }
-.modal-overlay { position: fixed; top:0; left:0; width:100%; height:100%; background: rgba(0,0,0,0.4); z-index:2000; display:flex; justify-content:center; align-items:center; }
-.modal-box { background: #fff; border: 2px solid #000; display:flex; flex-direction:column; }
-.modal-header { border-bottom: 1px solid #ccc; padding: 12px 20px; display:flex; justify-content:space-between; align-items:center; }
-.modal-body { padding: 16px 20px; overflow-y: auto; flex:1; }
-.modal-footer { border-top: 1px solid #ccc; padding: 12px 20px; text-align:right; }
-.form-group { margin-bottom: 12px; }
-.form-group label { display: block; font-size: 13px; font-weight:bold; margin-bottom:4px; }
-.form-group input { width: 100%; border: 1px solid #ccc; padding: 4px 6px; box-sizing:border-box; }
-.close { cursor: pointer; font-size: 24px; line-height:1; }
+.role-page {
+  height: 100%;
+  padding: 22px;
+  background: #f5f7fb;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
 
-/* 原生树形结构 */
-.tree-container { list-style: none; padding-left: 0; margin:0; }
-.tree-container ul { list-style: none; padding-left: 20px; margin:0; }
-.tree-node { padding: 4px 0; display: flex; align-items: center; gap:6px; }
-.tree-toggle { cursor:pointer; font-family:monospace; display:inline-block; width:18px; text-align:center; border:1px solid #ccc; background:#eee; margin-right:4px; }
-.tree-label { font-size: 14px; }
-.tree-type { font-size: 11px; color:#888; background:#f5f5f5; padding:0 4px; border:1px solid #eee; }
+.page-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 18px;
+  padding: 18px 20px;
+  background: #fff;
+  border: 1px solid #e5e6eb;
+  border-radius: 8px;
+}
+
+.list-panel {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  gap: 12px;
+  padding: 16px;
+  background: #fff;
+  border: 1px solid #e5e6eb;
+  border-radius: 8px;
+}
+
+.pagination-wrapper {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.permission-tree-wrapper {
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 6px;
+  max-height: 420px;
+  overflow-y: auto;
+  padding: 10px 12px;
+}
+
+.permission-tree-node {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+}
+
+.permission-type-tag {
+  margin-left: auto;
+}
 </style>
