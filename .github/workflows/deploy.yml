@@ -89,37 +89,48 @@ jobs:
           cd /app/cms/releases/client && ls -t | tail -n +6 | sudo xargs rm -rf 2>/dev/null || true
 
   # =========================================================
-  # 3. 后端 (Spring Boot) 构建与自动部署 (8080端口)
+  # 3. 后端 (Spring Boot) 构建与自动部署
   # =========================================================
   deploy-backend:
     runs-on: self-hosted
     needs: [deploy-admin, deploy-client]
     steps:
+      # --- 新增的后端 MD5 检测，跳过无意义编译 ---
+      - name: MD5 Change Detection (Backend)
+        id: filter_backend
+        run: |
+          export PATH=/usr/local/bin:/usr/bin:/usr/local/sbin:/usr/sbin:$PATH
+          CACHE_DIR="/tmp/backend_deploy_cache"
+          sudo mkdir -p $CACHE_DIR && sudo chown -R $(whoami):$(whoami) $CACHE_DIR
+          OLD_FINGERPRINT="$CACHE_DIR/last_backend_md5.txt"
+          CURRENT_FINGERPRINT=$(find cms2/src/ cms2/pom.xml -type f 2>/dev/null | sort | xargs md5sum 2>/dev/null | md5sum | cut -d' ' -f1)
+          NEED_BUILD="false"
+          if [ ! -f "$OLD_FINGERPRINT" ] || [ "$CURRENT_FINGERPRINT" != "$(cat $OLD_FINGERPRINT 2>/dev/null)" ]; then
+              NEED_BUILD="true"
+          fi
+          echo "$CURRENT_FINGERPRINT" > "$OLD_FINGERPRINT" || true
+          echo "code_changed=$NEED_BUILD" >> $GITHUB_OUTPUT
+
       - name: Native Git Checkout (SSH)
+        if: steps.filter_backend.outputs.code_changed == 'true'
         run: |
           export PATH=/usr/local/bin:/usr/bin:/usr/local/sbin:/usr/sbin:$PATH
           find . -mindepth 1 -delete 2>/dev/null || true
           git clone --depth 1 -b main git@github.com:Xu-ZHilin/Allcms.git .
 
       - name: Build Backend JAR (使用服务器本地 JDK)
+        if: steps.filter_backend.outputs.code_changed == 'true'
         run: |
-          # 1. 进入你准确的后端目录 cms2
           cd cms2
-          
-          # 2. 使用服务器本地配置好的 Java 和 Maven 环境
           export JAVA_HOME=/opt/jdk-17.0.14
           export M2_HOME=/opt/maven
           export PATH=$JAVA_HOME/bin:$M2_HOME/bin:$PATH
-          
-          # 3. 编译并跳过测试（生成 jar 包）
           mvn clean package -DskipTests
 
       - name: Deploy JAR to Server & Restart Service
+        if: steps.filter_backend.outputs.code_changed == 'true'
         run: |
-          # 1. 将新生成的 jar 覆盖到 current.jar（注意这里要将 cms2/target 的 jar 拿出来）
           sudo cp cms2/target/*.jar /app/cms/current.jar
           sudo chown root:root /app/cms/current.jar
-          
-          # 2. 自动重启后端服务，让它读取 prod 环境
           sudo systemctl daemon-reload
           sudo systemctl restart backend.service
