@@ -104,7 +104,7 @@ onMounted(() => {
     <div class="logout-wrapper">
       <div class="logout-btn" @click="handleLogout">
         <el-icon :size="18"><SwitchButton /></el-icon>
-        <span v-show="!isCollapse">退出登录123</span>
+        <span v-show="!isCollapse">退出登录</span>
       </div>
     </div>
   </aside>
